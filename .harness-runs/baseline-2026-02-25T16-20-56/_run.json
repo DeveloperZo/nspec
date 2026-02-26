@@ -1,0 +1,9 @@
+{
+  "spec": "Virtual Snack Game",
+  "prompt": "A casual browser game where players eat virtual cookies and pair them with beverages like milk or root beer. Target audience is kids 8-14. React + TypeScript, no backend, must work offline after initial load.",
+  "model": "claude-sonnet-4-20250514",
+  "tag": "baseline",
+  "steering": null,
+  "role": null,
+  "timestamp": "2026-02-25T16:20:57.001Z"
+}

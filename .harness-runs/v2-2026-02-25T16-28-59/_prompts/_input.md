@@ -1,0 +1,1 @@
+A casual browser game where players eat virtual cookies and pair them with beverages like milk or root beer. Target audience is kids 8-14. React + TypeScript, no backend, must work offline after initial load.

@@ -1,0 +1,230 @@
+{
+  "name": "nSpec",
+  "displayName": "nSpec",
+  "description": "Generate and maintain structured specs (Requirements \u2192 Design \u2192 Tasks \u2192 Verify) with AI. Use GitHub Copilot or Cursor, custom prompts, hooks, and verification for spec-driven development.",
+  "version": "0.2.0",
+  "publisher": "awilliams",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "Other",
+    "AI"
+  ],
+  "keywords": [
+    "spec",
+    "requirements",
+    "design",
+    "tasks",
+    "verify",
+    "AI",
+    "Copilot",
+    "Cursor",
+    "spec-driven",
+    "OpenSpec"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nspec/nSpec.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nspec/nSpec/issues"
+  },
+  "homepage": "https://github.com/nspec/nSpec#readme",
+  "icon": "media/icon.png",
+  "activationEvents": [
+    "onCommand:nspec.open",
+    "onCommand:nspec.newSpec",
+    "onCommand:nspec.pickModel",
+    "onCommand:nspec.setupSteering",
+    "onCommand:nspec.vibeToSpec",
+    "onCommand:nspec.scaffoldPrompts",
+    "onCommand:nspec.checkTasks",
+    "onChatParticipant:nspec.chat"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "nspec.open",
+        "title": "nSpec: Open Panel",
+        "icon": "$(notebook)"
+      },
+      {
+        "command": "nspec.newSpec",
+        "title": "nSpec: New Spec"
+      },
+      {
+        "command": "nspec.pickModel",
+        "title": "nSpec: Select AI Model"
+      },
+      {
+        "command": "nspec.setupSteering",
+        "title": "nSpec: Setup Steering Files"
+      },
+      {
+        "command": "nspec.vibeToSpec",
+        "title": "nSpec: Generate Spec from Conversation"
+      },
+      {
+        "command": "nspec.scaffoldPrompts",
+        "title": "nSpec: Scaffold Custom Prompts"
+      },
+      {
+        "command": "nspec.checkTasks",
+        "title": "nSpec: Check Task Completion"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "nspec.open",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "nspec.open"
+        },
+        {
+          "command": "nspec.newSpec"
+        },
+        {
+          "command": "nspec.pickModel"
+        },
+        {
+          "command": "nspec.setupSteering"
+        },
+        {
+          "command": "nspec.vibeToSpec"
+        },
+        {
+          "command": "nspec.scaffoldPrompts"
+        },
+        {
+          "command": "nspec.checkTasks"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "nSpec",
+      "properties": {
+        "nspec.preferredModelId": {
+          "type": "string",
+          "default": "",
+          "description": "Preferred language model ID. Run 'nSpec: Select AI Model' to set interactively."
+        },
+        "nspec.specsFolder": {
+          "type": "string",
+          "default": ".specs",
+          "description": "Folder path (relative to workspace root) where specs are stored"
+        },
+        "nspec.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for OpenAI or Anthropic (required in Cursor). Leave blank to use vscode.lm (VS Code + Copilot)."
+        },
+        "nspec.apiBaseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "API base URL. For Anthropic: https://api.anthropic.com/v1"
+        },
+        "nspec.apiModel": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "Model name. For Anthropic: claude-sonnet-4-20250514"
+        },
+        "nspec.allowedCommands": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["npm install", "npm run", "npx"],
+          "description": "Shell command prefixes that are auto-approved during supervised task execution. Other commands require manual approval."
+        },
+        "nspec.jiraBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Jira base URL (e.g. https://your-domain.atlassian.net). Optional if you paste full browse URLs."
+        },
+        "nspec.jiraEmail": {
+          "type": "string",
+          "default": "",
+          "description": "Email for Jira Cloud API (required to fetch issues from a Jira link in New Spec)."
+        },
+        "nspec.jiraApiToken": {
+          "type": "string",
+          "default": "",
+          "description": "Jira Cloud API token (required to fetch issues). Create at: https://id.atlassian.com/manage-profile/security/api-tokens"
+        },
+        "nspec.rovoMcpConfigPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to config.toml (or similar) that defines Rovo MCP. Used when checking Rovo MCP before Jira URL. Relative paths are resolved from workspace root. Leave empty to use .cursor/mcp.json instead."
+        }
+      }
+    },
+    "chatParticipants": [
+      {
+        "id": "nspec.chat",
+        "fullName": "nSpec",
+        "name": "nspec",
+        "description": "Generate and manage specs from conversation",
+        "isSticky": false,
+        "commands": [
+          {
+            "name": "spec",
+            "description": "Generate a spec from this conversation"
+          },
+          {
+            "name": "status",
+            "description": "Show spec status"
+          },
+          {
+            "name": "refine",
+            "description": "Refine a spec stage with feedback"
+          },
+          {
+            "name": "context",
+            "description": "Inject a spec as context (spec:name)"
+          }
+        ]
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "nspec.open",
+        "key": "ctrl+shift+k",
+        "mac": "cmd+shift+k"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "test": "vitest run",
+    "test:extension": "node test/run-extension-tests.js",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/mocha": "^10.0.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "^2.3.0",
+    "mocha": "^10.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "prettier": "^3.2.0",
+    "eslint-config-prettier": "^9.1.0"
+  },
+  "dependencies": {
+    "toml": "^3.0.0"
+  }
+}
