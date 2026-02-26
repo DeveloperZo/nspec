@@ -1468,7 +1468,7 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
     <div class="specs-count" id="specs-count"></div>
     <div class="specs-list" id="specs-list"></div>
     <div class="sidebar-footer">
-      <button class="btn-new" id="btn-new-spec">
+      <button type="button" class="btn-new" id="btn-new-spec">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         New Spec
       </button>
@@ -1518,7 +1518,7 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
         <div class="welcome-logo">📋</div>
         <div class="welcome-title">Welcome to nSpec</div>
         <div class="welcome-sub">Create AI-powered specs with Requirements, Design, and Task plans in seconds.</div>
-        <button class="btn-welcome" id="btn-welcome-new">Create your first spec</button>
+        <button type="button" class="btn-welcome" id="btn-welcome-new">Create your first spec</button>
       </div>
 
       <!-- Requirements view -->
@@ -2209,7 +2209,7 @@ function updateTopbarActions() {
   container.querySelector('#btn-import-file')?.addEventListener('click', () => vscode.postMessage({ command: 'importFromFile' }));
   const reqFormatSelect = container.querySelector('#req-format-select');
   if (reqFormatSelect) {
-    (reqFormatSelect as HTMLSelectElement).value = state.requirementsFormat || 'given-when-then';
+    reqFormatSelect.value = state.requirementsFormat || 'given-when-then';
     reqFormatSelect.addEventListener('change', (e) => {
       const v = (e.target && 'value' in e.target) ? (e.target.value) : 'given-when-then';
       vscode.postMessage({ command: 'setRequirementsFormat', format: v });
@@ -2533,8 +2533,12 @@ document.querySelectorAll('.stage-pill').forEach(pill => {
 });
 
 // ── New spec modal ────────────────────────────────────────────────────────────
-document.getElementById('btn-new-spec')?.addEventListener('click', openNewModal);
-document.getElementById('btn-welcome-new')?.addEventListener('click', openNewModal);
+// Delegate from #app so "New Spec" / "Create your first spec" work even if direct
+// listeners failed (script timing, DOM not ready, or Cursor/webview quirks).
+document.getElementById('app')?.addEventListener('click', (e) => {
+  const t = e.target && e.target.closest && e.target.closest('#btn-new-spec, #btn-welcome-new');
+  if (t) { e.preventDefault(); openNewModal(); }
+});
 document.getElementById('btn-new-cancel')?.addEventListener('click', closeNewModal);
 document.getElementById('btn-new-ok')?.addEventListener('click', submitNewSpec);
 
@@ -2595,8 +2599,8 @@ document.querySelectorAll('input[name="spec-type"]').forEach(r => {
 function submitNewSpec() {
   const name = document.getElementById('new-spec-name')?.value?.trim();
   const prompt = document.getElementById('new-spec-prompt')?.value?.trim();
-  const jiraUrl = (document.getElementById('new-spec-jira') as HTMLInputElement)?.value?.trim();
-  const lightDesign = (document.getElementById('new-spec-light-design') as HTMLInputElement)?.checked ?? false;
+  const jiraUrl = document.getElementById('new-spec-jira')?.value?.trim();
+  const lightDesign = document.getElementById('new-spec-light-design')?.checked ?? false;
   if (!name) { alert('Please enter a spec name.'); return; }
   if (!prompt && !jiraUrl) {
     alert('Enter a feature description or a Jira user story URL (user stories only).');
