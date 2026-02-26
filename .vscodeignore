@@ -1,14 +1,49 @@
-.vscode/**
-.vscode-test/**
+# Source (compiled to out/)
 src/**
-node_modules/**
-.gitignore
-.yarnrc
-webpack.config.js
-vsc-extension-quickstart.md
 **/tsconfig.json
-**/.eslintrc.json
-**/*.map
 **/*.ts
 !out/**
 out/test/**
+**/*.map
+
+# Dev tooling
+.vscode/**
+.vscode-test/**
+.eslintrc.cjs
+**/.eslintrc.json
+.prettierrc
+vitest.config.ts
+webpack.config.js
+vsc-extension-quickstart.md
+.yarnrc
+
+# Dependencies
+node_modules/**
+
+# Tests and harness
+test/**
+test-workspace/**
+test-harness.mjs
+.harness-runs/**
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.local.json
+
+# Git and CI
+.git/**
+.github/**
+.gitignore
+
+# Internal dev docs (not for marketplace)
+PARITY.md
+status.md
+PROMPTS.md
+
+# Agent integration (useful locally, not in VSIX)
+.claude/**
+.cursor/**
+AGENTS.md
+CLAUDE.md

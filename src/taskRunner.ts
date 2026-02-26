@@ -294,7 +294,9 @@ export class TaskRunner {
     const originalUri = vscode.Uri.file(absPath);
 
     // Write proposed content to temp file
-    const tempDir = path.join(workspaceRoot, '.specs', '_temp');
+    const specsFolder =
+      vscode.workspace.getConfiguration('nspec').get<string>('specsFolder') || '.specs';
+    const tempDir = path.join(workspaceRoot, specsFolder, '_temp');
     fs.mkdirSync(tempDir, { recursive: true });
     const tempPath = path.join(tempDir, path.basename(relPath));
     fs.writeFileSync(tempPath, content, 'utf-8');
@@ -356,7 +358,9 @@ export class TaskRunner {
     }
 
     // Write proposed version to temp
-    const tempDir = path.join(workspaceRoot, '.specs', '_temp');
+    const specsFolder =
+      vscode.workspace.getConfiguration('nspec').get<string>('specsFolder') || '.specs';
+    const tempDir = path.join(workspaceRoot, specsFolder, '_temp');
     fs.mkdirSync(tempDir, { recursive: true });
     const tempPath = path.join(tempDir, path.basename(relPath));
     fs.writeFileSync(tempPath, proposed, 'utf-8');

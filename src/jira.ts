@@ -55,7 +55,9 @@ export async function fetchJiraIssueAsUserStory(
 ): Promise<JiraIssueResult> {
   const parsed = parseJiraUrl(jiraUrl);
   if (!parsed) {
-    throw new Error('Invalid Jira URL. Use a browse link, e.g. https://your-domain.atlassian.net/browse/PROJ-123');
+    throw new Error(
+      'Invalid Jira URL. Use a browse link, e.g. https://your-domain.atlassian.net/browse/PROJ-123'
+    );
   }
 
   const baseUrl = config.baseUrl || `https://${parsed.host}`;
@@ -74,7 +76,9 @@ export async function fetchJiraIssueAsUserStory(
   const res = await fetch(apiUrl, { method: 'GET', headers });
   if (!res.ok) {
     if (res.status === 401) {
-      throw new Error('Jira authentication failed. Check Settings → nSpec → Jira email and API token.');
+      throw new Error(
+        'Jira authentication failed. Check Settings → nSpec → Jira email and API token.'
+      );
     }
     if (res.status === 404) {
       throw new Error(`Jira issue ${parsed.issueKey} not found or you don't have access.`);
@@ -106,7 +110,11 @@ export async function fetchJiraIssueAsUserStory(
   const summary = (fields.summary || '').trim();
   let description = '';
   const descNode = fields.description;
-  if (descNode && typeof descNode === 'object' && Array.isArray((descNode as { content?: unknown[] }).content)) {
+  if (
+    descNode &&
+    typeof descNode === 'object' &&
+    Array.isArray((descNode as { content?: unknown[] }).content)
+  ) {
     description = adfToPlainText(descNode).trim();
   }
 

@@ -23,9 +23,7 @@ export interface RovoMcpCheckResult {
 function hasRovoInServers(servers: unknown): boolean {
   if (!servers || typeof servers !== 'object') return false;
   const keys = Object.keys(servers as Record<string, unknown>);
-  return keys.some(
-    (k) => ROVO_SERVER_KEYS.includes(k) || k.toLowerCase().includes('rovo')
-  );
+  return keys.some((k) => ROVO_SERVER_KEYS.includes(k) || k.toLowerCase().includes('rovo'));
 }
 
 /**

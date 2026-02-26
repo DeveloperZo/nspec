@@ -167,9 +167,7 @@ export function buildSystemPrompt(stage: Stage, ctx: PromptContext): string {
   const role = ctx.role || DEFAULT_ROLE;
   const steering = ctx.steering ? `Context:\n${ctx.steering}` : '';
   const sectionList =
-    stage === 'requirements' && useEars
-      ? SECTIONS_EARS_REQUIREMENTS
-      : SECTIONS[stage];
+    stage === 'requirements' && useEars ? SECTIONS_EARS_REQUIREMENTS : SECTIONS[stage];
   const allSections = [...sectionList, ...(ctx.extraSections || [])];
   const sectionsStr =
     allSections.length > 0
@@ -493,19 +491,30 @@ export function buildBugfixVerificationPrompt(
 
 export const CLARIFICATION_SYSTEM = `You are a senior software architect helping to clarify requirements before generating a specification.
 
-Given a feature description, ask 3-5 focused clarifying questions to reduce ambiguity. Each question should target one of these areas:
-- **Scope**: What is included vs excluded? What are the boundaries?
-- **Users**: Who are the target users? What are their primary workflows?
-- **Constraints**: Technical constraints, performance requirements, compatibility needs?
-- **Edge Cases**: What happens in error states, empty states, or unusual inputs?
-- **Success Criteria**: How will you know this feature is working correctly?
+Given a feature description, ask 3-5 focused clarifying questions to reduce ambiguity. For each question provide 3-4 concrete multiple-choice options covering the most likely real-world answers.
 
-Guidelines:
+Focus areas:
+- Scope: What is included vs excluded? What are the boundaries?
+- Users: Who are the target users? What are their primary workflows?
+- Constraints: Technical constraints, performance requirements, compatibility needs?
+- Edge Cases: What happens in error states, empty states, or unusual inputs?
+- Success Criteria: How will you know this feature is working correctly?
+
+Output format — follow this EXACTLY for every question:
+
+1. Question text?
+   a) Option one
+   b) Option two
+   c) Option three
+   d) Option four
+
+Rules:
 - Ask only questions the description does not already answer.
-- Keep questions specific and answerable — avoid open-ended "tell me more" questions.
-- Number each question (1, 2, 3...).
-- After the questions, do NOT generate any spec content — just ask the questions.
-- If the description is already very detailed, ask fewer questions (minimum 2).`;
+- Options must be concrete, specific, and cover the most plausible answers.
+- Each option fits on one line (no sub-bullets).
+- Minimum 3 options, maximum 4 options per question.
+- After the questions, do NOT generate any spec content — stop after the last option.
+- If the description is very detailed, ask fewer questions (minimum 2).`;
 
 export function buildClarificationUserPrompt(description: string): string {
   return `Feature description:\n\n${description}\n\nAsk 3-5 clarifying questions about this feature before I generate the requirements spec.`;

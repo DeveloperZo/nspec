@@ -96,12 +96,6 @@ nspec import <name> <stage> <file> --transform  # AI-convert to spec format firs
 # --transform converts PRDs, Notion exports, etc. into Given/When/Then format
 ```
 
-### Clarify before generating
-```bash
-nspec clarify <name> --description "..."  # Interactive Q&A before requirements
-# Asks 3-5 clarifying questions, then generates requirements with the answers
-```
-
 ### Set up agent instructions
 ```bash
 nspec setup-agents     # Writes this AGENTS.md file
@@ -133,8 +127,6 @@ nspec setup-steering   # Generates steering files from workspace (product.md, te
 | Ask a question about the spec | CLI: `nspec refine <name> <stage> --feedback "..."` |
 | Substantive rewrite of a section | CLI: `nspec refine` with change request |
 | Import an external document as a stage | CLI: `nspec import` (with optional `--transform`) |
-| Clarify requirements before generation | CLI: `nspec clarify` |
-
 ## Importing Existing Documents
 
 When the user says "import this document as requirements" or similar:
@@ -144,17 +136,6 @@ When the user says "import this document as requirements" or similar:
 3. After import, cascade: `nspec cascade <name>` to generate downstream stages
 
 The `--transform` flag uses AI to convert arbitrary documents into nSpec's structured format (numbered FRs, acceptance criteria, etc.). Without it, the file content is copied verbatim.
-
-## Clarification Before Spec Generation
-
-When the user asks to create a spec for a complex feature:
-
-1. Run: `nspec clarify <name> --description "brief feature description"`
-2. The CLI asks 3-5 clarifying questions about scope, users, constraints, edge cases, and success criteria
-3. After the user answers, requirements are generated incorporating the Q&A context
-4. Then cascade: `nspec cascade <name>` to generate design → tasks → verify
-
-**Alternative (conversation-based):** If you are a chat agent (Codex, Claude Code, Cursor), you can ask the clarifying questions yourself, then pipe the full conversation to `nspec vibe-to-spec <name> --cascade`.
 
 ## Reading verify.md and Acting on Gaps
 
@@ -216,10 +197,10 @@ For **design** and **tasks** stages, nSpec also reads key project files (package
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `SPECPILOT_API_KEY` | (required) | OpenAI or Anthropic API key |
-| `SPECPILOT_API_BASE` | `https://api.openai.com/v1` | API base URL |
-| `SPECPILOT_MODEL` | `gpt-4o` | Model to use for generation |
-| `SPECPILOT_SPECS_DIR` | `.specs` (relative to cwd) | Specs folder path |
+| `NSPEC_API_KEY` | (required) | OpenAI or Anthropic API key |
+| `NSPEC_API_BASE` | `https://api.openai.com/v1` | API base URL |
+| `NSPEC_MODEL` | `gpt-4o` | Model to use for generation |
+| `NSPEC_SPECS_DIR` | `.specs` (relative to cwd) | Specs folder path |
 
 ## Vibe-to-Spec Workflow
 

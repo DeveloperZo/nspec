@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import type { Dirent } from 'fs';
 
 export type Stage = 'requirements' | 'design' | 'tasks' | 'verify';
 
@@ -70,9 +71,9 @@ export function loadSteering(specsRoot: string, specName: string): string | null
   // 1. Scan .specs/steering/*.md (workspace conventions, sorted alphabetically)
   const steeringDir = path.join(specsRoot, 'steering');
   if (fs.existsSync(steeringDir)) {
-    const files = (fs.readdirSync(steeringDir, { withFileTypes: true }) as import('fs').Dirent[])
-      .filter((f: import('fs').Dirent) => f.isFile() && f.name.endsWith('.md'))
-      .map((f: import('fs').Dirent) => f.name)
+    const files = (fs.readdirSync(steeringDir, { withFileTypes: true }) as Dirent[])
+      .filter((f: Dirent) => f.isFile() && f.name.endsWith('.md'))
+      .map((f: Dirent) => f.name)
       .sort();
     for (const file of files) {
       const content = readFileOrNull(path.join(steeringDir, file));
@@ -112,8 +113,8 @@ export function loadExtraSections(specsRoot: string, specName: string, stage: St
 export function hasCustomPrompts(specsRoot: string, specName: string): boolean {
   const dir = path.join(specsRoot, specName, PROMPTS_DIR);
   if (!fs.existsSync(dir)) return false;
-  return (fs.readdirSync(dir, { withFileTypes: true }) as import('fs').Dirent[]).some(
-    (f: import('fs').Dirent) => f.name.endsWith('.md')
+  return (fs.readdirSync(dir, { withFileTypes: true }) as Dirent[]).some((f: Dirent) =>
+    f.name.endsWith('.md')
   );
 }
 
@@ -131,9 +132,9 @@ export function scaffoldCustomPrompts(specsRoot: string, specName: string): void
 export function listSpecs(specsRoot: string): SpecInfo[] {
   if (!fs.existsSync(specsRoot)) return [];
 
-  return (fs.readdirSync(specsRoot, { withFileTypes: true }) as import('fs').Dirent[])
-    .filter((d: import('fs').Dirent) => d.isDirectory())
-    .map((d: import('fs').Dirent) => {
+  return (fs.readdirSync(specsRoot, { withFileTypes: true }) as Dirent[])
+    .filter((d: Dirent) => d.isDirectory())
+    .map((d: Dirent) => {
       const folderPath = path.join(specsRoot, d.name);
       const stages: Partial<Record<Stage, string>> = {};
       for (const [stage, file] of Object.entries(STAGE_FILES) as [Stage, string][]) {
@@ -371,6 +372,35 @@ export function writeSpecConfig(specsRoot: string, specName: string, config: Spe
   fs.writeFileSync(path.join(dir, CONFIG_FILE), JSON.stringify(config, null, 2), 'utf-8');
 }
 
+// ── Workspace-level config ────────────────────────────────────────────────────
+
+const WORKSPACE_CONFIG_FILE = 'config.json';
+
+/** Workspace-wide defaults applied to all specs unless overridden per spec. */
+export interface WorkspaceConfig {
+  /** Default requirements format for all specs in this workspace. */
+  requirementsFormat?: RequirementsFormat;
+}
+
+export function loadWorkspaceConfig(specsRoot: string): WorkspaceConfig | null {
+  const configPath = path.join(specsRoot, WORKSPACE_CONFIG_FILE);
+  if (!fs.existsSync(configPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+export function writeWorkspaceConfig(specsRoot: string, config: WorkspaceConfig): void {
+  fs.mkdirSync(specsRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(specsRoot, WORKSPACE_CONFIG_FILE),
+    JSON.stringify(config, null, 2),
+    'utf-8'
+  );
+}
+
 function writeConfig(dir: string, mode: GenerationMode = 'requirements-first', template?: string) {
   const configPath = path.join(dir, CONFIG_FILE);
   if (!fs.existsSync(configPath)) {
@@ -567,9 +597,9 @@ function searchForFile(dir: string, name: string, depth: number, maxDepth: numbe
     'venv',
     '.specs',
   ]);
-  let entries: fs.Dirent[];
+  let entries: Dirent[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true }) as fs.Dirent[];
+    entries = fs.readdirSync(dir, { withFileTypes: true }) as Dirent[];
   } catch {
     return false;
   }
@@ -608,9 +638,9 @@ function grepDir(
     'venv',
     '.specs',
   ]);
-  let entries: fs.Dirent[];
+  let entries: Dirent[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true }) as fs.Dirent[];
+    entries = fs.readdirSync(dir, { withFileTypes: true }) as Dirent[];
   } catch {
     return false;
   }
@@ -747,9 +777,9 @@ export function buildWorkspaceContext(workspaceRoot: string, specName: string): 
 
 function listFilesShallow(dir: string): string[] {
   try {
-    return (fs.readdirSync(dir, { withFileTypes: true }) as import('fs').Dirent[])
-      .filter((e: import('fs').Dirent) => e.isFile())
-      .map((e: import('fs').Dirent) => e.name);
+    return (fs.readdirSync(dir, { withFileTypes: true }) as Dirent[])
+      .filter((e: Dirent) => e.isFile())
+      .map((e: Dirent) => e.name);
   } catch {
     return [];
   }
@@ -757,17 +787,17 @@ function listFilesShallow(dir: string): string[] {
 
 function listDirTree(root: string, maxDepth: number, prefix = '', depth = 0): string {
   if (depth > maxDepth) return '';
-  let entries: import('fs').Dirent[];
+  let entries: Dirent[];
   try {
-    entries = fs.readdirSync(root, { withFileTypes: true }) as import('fs').Dirent[];
+    entries = fs.readdirSync(root, { withFileTypes: true }) as Dirent[];
   } catch {
     return '';
   }
 
   const lines: string[] = [];
   const filtered = entries
-    .filter((e: import('fs').Dirent) => !CONTEXT_SKIP.has(e.name) && !e.name.startsWith('.'))
-    .sort((a: import('fs').Dirent, b: import('fs').Dirent) => {
+    .filter((e: Dirent) => !CONTEXT_SKIP.has(e.name) && !e.name.startsWith('.'))
+    .sort((a: Dirent, b: Dirent) => {
       if (a.isDirectory() && !b.isDirectory()) return -1;
       if (!a.isDirectory() && b.isDirectory()) return 1;
       return a.name.localeCompare(b.name);
@@ -799,9 +829,9 @@ function findRelevantSourceFiles(root: string, specName: string, max: number): s
 
   function walk(dir: string, relDir: string, depth: number) {
     if (depth > 4 || results.length >= max) return;
-    let entries: import('fs').Dirent[];
+    let entries: Dirent[];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true }) as import('fs').Dirent[];
+      entries = fs.readdirSync(dir, { withFileTypes: true }) as Dirent[];
     } catch {
       return;
     }
@@ -1015,9 +1045,9 @@ export function loadHooks(specsRoot: string): HookDefinition[] {
   if (!fs.existsSync(hooksDir)) return [];
 
   const hooks: HookDefinition[] = [];
-  const files = (fs.readdirSync(hooksDir, { withFileTypes: true }) as import('fs').Dirent[])
-    .filter((f: import('fs').Dirent) => f.isFile() && f.name.endsWith('.json'))
-    .map((f: import('fs').Dirent) => f.name)
+  const files = (fs.readdirSync(hooksDir, { withFileTypes: true }) as Dirent[])
+    .filter((f: Dirent) => f.isFile() && f.name.endsWith('.json'))
+    .map((f: Dirent) => f.name)
     .sort();
 
   for (const file of files) {

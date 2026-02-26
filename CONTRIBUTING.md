@@ -11,8 +11,8 @@ Thanks for your interest in contributing. This file covers building, testing, an
 ## Build
 
 ```bash
-git clone <repo-url>
-cd nSpec-v2
+git clone https://github.com/nspec/nSpec.git
+cd nSpec
 npm install
 npm run compile
 ```
@@ -40,7 +40,6 @@ Running these before pushing helps catch regressions.
 
 - **Spec pipeline:** Requirements → Design → Tasks → Verify. See [AGENTS.md](AGENTS.md) for folder structure, CLI commands, and stage pipeline.
 - **Claude/Cursor integration:** See [CLAUDE.md](CLAUDE.md) for slash commands and vibe-to-spec.
-- **Quality assessment:** See [assessment/TOP-QUARTILE-QUALITY-ASSESSMENT.md](assessment/TOP-QUARTILE-QUALITY-ASSESSMENT.md) for quality pillars and recommendations.
 
 ## Code quality
 

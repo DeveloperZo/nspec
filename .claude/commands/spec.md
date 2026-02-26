@@ -23,6 +23,6 @@ Replace `<SPEC_NAME>` with the determined name.
    - Summarize the key requirements that were extracted
    - If the health score is below 80, suggest running `node bin/nspec.mjs refine <SPEC_NAME> requirements --feedback "..."` to address gaps
 
-4. If the command fails with "SPECPILOT_API_KEY env var is required":
-   - Tell the user to set the environment variable: `export SPECPILOT_API_KEY="your-key"`
+4. If the command fails with "NSPEC_API_KEY env var is required":
+   - Tell the user to set the environment variable: `export NSPEC_API_KEY="your-key"`
    - Mention they can use OpenAI or Anthropic keys

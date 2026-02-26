@@ -1,6 +1,6 @@
 # nSpec — Claude Code Instructions
 
-This project uses nSpec for spec-driven development. Before writing code, create structured specifications: **Requirements -> Design -> Tasks -> Verify**. Specs live in `.specs/`.
+This project uses nSpec for spec-driven development. Before writing code, create structured specifications: **Requirements → Design → Tasks → Verify**. Specs live in `.specs/`.
 
 ## Slash Commands
 
@@ -18,27 +18,28 @@ echo '<conversation transcript>' | node bin/nspec.mjs vibe-to-spec <name> --casc
 
 ## Environment
 
-The CLI requires `SPECPILOT_API_KEY` for LLM calls. Supports OpenAI and Anthropic:
+The CLI requires `NSPEC_API_KEY` for LLM calls. Supports OpenAI and Anthropic:
 
 ```bash
 # OpenAI (default)
-export SPECPILOT_API_KEY="sk-..."
+export NSPEC_API_KEY="sk-..."
 
 # Anthropic
-export SPECPILOT_API_KEY="sk-ant-..."
-export SPECPILOT_API_BASE="https://api.anthropic.com/v1"
-export SPECPILOT_MODEL="claude-sonnet-4-20250514"
+export NSPEC_API_KEY="sk-ant-..."
+export NSPEC_API_BASE="https://api.anthropic.com/v1"
+export NSPEC_MODEL="claude-sonnet-4-20250514"
 ```
 
 ## CLI Quick Reference
 
 ```bash
-node bin/nspec.mjs init <name>                           # Create empty spec
-node bin/nspec.mjs generate <name> requirements --description "..."  # Generate one stage
-node bin/nspec.mjs cascade <name>                        # Generate all downstream stages
-node bin/nspec.mjs verify <name> --scheme committee      # Thorough verification
-node bin/nspec.mjs refine <name> <stage> --feedback "..."  # Revise a stage
-node bin/nspec.mjs status                                # List all specs
+node bin/nspec.mjs init <name>                                        # Create empty spec
+node bin/nspec.mjs generate <name> requirements --description "..."   # Generate one stage
+node bin/nspec.mjs cascade <name>                                     # Generate all downstream stages
+node bin/nspec.mjs verify <name> --scheme committee                   # Thorough verification
+node bin/nspec.mjs refine <name> <stage> --feedback "..."             # Revise a stage
+node bin/nspec.mjs status                                             # List all specs
+node bin/nspec.mjs status <name>                                      # Detail view with health score
 ```
 
 ## Spec Structure

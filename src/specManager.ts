@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as store from './core/specStore';
 import { getSpecsRoot, getWorkspaceRoot } from './workspace';
@@ -31,9 +32,7 @@ export {
 function requireSpecsRoot(): string {
   const root = getSpecsRoot();
   if (!root)
-    throw new Error(
-      'No workspace folder open. Open a folder (File → Open Folder) to use nSpec.'
-    );
+    throw new Error('No workspace folder open. Open a folder (File → Open Folder) to use nSpec.');
   return root;
 }
 
@@ -127,7 +126,6 @@ export function openFileInEditor(specName: string, stage: store.Stage): void {
   const root = getSpecsRoot();
   if (!root) return;
   const filePath = path.join(root, specName, `${stage}.md`);
-  const fs = require('fs');
   if (fs.existsSync(filePath)) {
     vscode.window.showTextDocument(vscode.Uri.file(filePath));
   }

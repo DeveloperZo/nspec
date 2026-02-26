@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { LMClient } from './lmClient';
 import * as specManager from './specManager';
 import { getWorkspaceRoot } from './workspace';
@@ -17,8 +18,9 @@ import {
   buildVerificationPrompt,
   VIBE_TO_SPEC_SYSTEM,
   buildVibeToSpecPrompt,
-  TASK_CHECK_SYSTEM,
-  buildTaskCheckPrompt,
+  CLARIFICATION_SYSTEM,
+  buildClarificationUserPrompt,
+  buildClarifiedRequirementsUserPrompt,
 } from './prompts';
 import type { PromptContext } from './prompts';
 
@@ -58,9 +60,7 @@ export class SpecPanelProvider {
     this.ai = new LMClient();
 
     // Restore saved model preference
-    const savedModel = vscode.workspace
-      .getConfiguration('nspec')
-      .get<string>('preferredModelId');
+    const savedModel = vscode.workspace.getConfiguration('nspec').get<string>('preferredModelId');
     if (savedModel) this.ai.setSelectedModel(savedModel);
 
     this.taskRunner = new TaskRunner((text) => this.postMessage({ type: 'taskOutput', text }));
@@ -114,9 +114,7 @@ export class SpecPanelProvider {
 
     if (picked) {
       this.ai.setSelectedModel(picked.id);
-      await vscode.workspace
-        .getConfiguration('nspec')
-        .update('preferredModelId', picked.id, true);
+      await vscode.workspace.getConfiguration('nspec').update('preferredModelId', picked.id, true);
       vscode.window.showInformationMessage(`nSpec: Using ${picked.label}`);
       this.postMessage({ type: 'modelChanged', modelName: picked.label, modelId: picked.id });
     }
@@ -202,7 +200,6 @@ export class SpecPanelProvider {
         title: 'Select conversation transcript file',
       });
       if (!files || files.length === 0) return;
-      const fs = require('fs') as typeof import('fs');
       transcript = fs.readFileSync(files[0].fsPath, 'utf-8');
     }
 
@@ -266,7 +263,7 @@ export class SpecPanelProvider {
   // ─── Panel lifecycle ───────────────────────────────────────────────────────
 
   private createPanel() {
-    this.panel = vscode.window.createWebviewPanel('specPilot', 'nSpec', vscode.ViewColumn.One, {
+    this.panel = vscode.window.createWebviewPanel('nspec', 'nSpec', vscode.ViewColumn.One, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')],
@@ -313,8 +310,7 @@ export class SpecPanelProvider {
           msg.prompt as string,
           msg.specType as string,
           msg.template as string,
-          msg.jiraUrl as string | undefined,
-          msg.lightDesign as boolean | undefined
+          msg.jiraUrl as string | undefined
         );
         break;
 
@@ -433,6 +429,27 @@ export class SpecPanelProvider {
       case 'cancelTaskRun':
         this.taskRunner.cancelRun();
         break;
+
+      case 'startClarification':
+        await this.handleStartClarification(
+          msg.specName as string,
+          msg.description as string,
+          msg.specType as string,
+          msg.template as string,
+          msg.jiraUrl as string | undefined
+        );
+        break;
+
+      case 'submitClarification':
+        await this.handleSubmitClarification(
+          msg.specName as string,
+          msg.description as string,
+          msg.specType as string,
+          msg.qaTranscript as string,
+          msg.template as string,
+          msg.jiraUrl as string | undefined
+        );
+        break;
     }
   }
 
@@ -453,7 +470,7 @@ export class SpecPanelProvider {
 
     const requirementsFormat =
       this.state.activeSpec != null
-        ? specManager.readConfig(this.state.activeSpec)?.requirementsFormat ?? undefined
+        ? (specManager.readConfig(this.state.activeSpec)?.requirementsFormat ?? undefined)
         : undefined;
 
     this.postMessage({
@@ -475,17 +492,18 @@ export class SpecPanelProvider {
     prompt: string,
     specType?: string,
     template?: string,
-    jiraUrl?: string,
-    lightDesign?: boolean
+    jiraUrl?: string
   ) {
     let effectivePrompt = prompt?.trim() || '';
 
     if (jiraUrl?.trim()) {
-      const configPath = vscode.workspace.getConfiguration('nspec').get<string>('rovoMcpConfigPath');
+      const configPath = vscode.workspace
+        .getConfiguration('nspec')
+        .get<string>('rovoMcpConfigPath');
       const rovoCheck = isRovoMcpConfigured(getWorkspaceRoot(), configPath);
       if (!rovoCheck.configured) {
         const choice = await vscode.window.showWarningMessage(
-          'nSpec: Rovo MCP doesn\'t appear to be configured. Jira integration works best with Rovo MCP. Continue anyway?',
+          "nSpec: Rovo MCP doesn't appear to be configured. Jira integration works best with Rovo MCP. Continue anyway?",
           { modal: false },
           'Continue',
           'Cancel'
@@ -534,11 +552,9 @@ export class SpecPanelProvider {
 
     specManager.createSpecFolder(folderName, mode, template || undefined);
 
-    if (lightDesign) {
-      const cfg = specManager.readConfig(folderName);
-      if (cfg) {
-        specManager.writeSpecConfig(folderName, { ...cfg, lightDesign: true });
-      }
+    const cfg = specManager.readConfig(folderName);
+    if (cfg) {
+      specManager.writeSpecConfig(folderName, { ...cfg, lightDesign: true });
     }
 
     if (template) {
@@ -565,6 +581,96 @@ export class SpecPanelProvider {
     } else {
       await this.streamGenerate(firstStage, effectivePrompt, specName);
     }
+  }
+
+  // ─── Guided clarification (D1 + D2) ────────────────────────────────────────
+
+  /** Stream AI clarifying questions back to the webview before spec creation. */
+  private async handleStartClarification(
+    specName: string,
+    description: string,
+    _specType: string,
+    _template: string,
+    _jiraUrl?: string
+  ) {
+    if (!specName?.trim() || !description?.trim()) {
+      this.postMessage({
+        type: 'clarificationError',
+        message: 'Spec name and description are required.',
+      });
+      return;
+    }
+
+    this.postMessage({ type: 'clarificationStreamStart' });
+    let accumulated = '';
+
+    try {
+      await this.ai.streamCompletion(
+        CLARIFICATION_SYSTEM,
+        buildClarificationUserPrompt(description),
+        (chunk) => {
+          accumulated += chunk;
+          this.postMessage({ type: 'clarificationStreamChunk', chunk });
+        },
+        () => {
+          this.postMessage({ type: 'clarificationStreamDone', questions: accumulated });
+        },
+        (err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          const clean = msg.replace(/^[\s\S]*?Error:\s*/i, '').slice(0, 120);
+          this.postMessage({ type: 'clarificationError', message: clean });
+        }
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.postMessage({ type: 'clarificationError', message: msg.slice(0, 120) });
+    }
+  }
+
+  /** Create the spec and generate requirements using the clarified Q&A context. */
+  private async handleSubmitClarification(
+    specName: string,
+    description: string,
+    specType: string,
+    qaTranscript: string,
+    template: string,
+    _jiraUrl?: string
+  ) {
+    if (!specName?.trim() || !description?.trim()) {
+      vscode.window.showWarningMessage('nSpec: Spec name and description are required.');
+      return;
+    }
+
+    const folderName = specManager.toFolderName(specName);
+    type GM = import('./core/specStore').GenerationMode;
+    let mode: GM = 'requirements-first';
+    if (specType === 'bugfix') mode = 'bugfix';
+    else if (specType === 'design-first') mode = 'design-first';
+
+    specManager.createSpecFolder(folderName, mode, template || undefined);
+
+    const cfg = specManager.readConfig(folderName);
+    if (cfg) specManager.writeSpecConfig(folderName, { ...cfg, lightDesign: true });
+    if (template) specManager.scaffoldTemplate(folderName, template);
+
+    this.state.activeSpec = folderName;
+    this.state.contents = {};
+    this.state.activeStage = 'requirements';
+
+    this.postMessage({
+      type: 'specCreated',
+      specName: folderName,
+      displayName: specName,
+      stage: 'requirements',
+      progress: null,
+      hasCustomPrompts: !!template,
+    });
+
+    const userPrompt = qaTranscript?.trim()
+      ? buildClarifiedRequirementsUserPrompt(description, qaTranscript)
+      : description;
+
+    await this.streamGenerate('requirements', userPrompt, specName);
   }
 
   private handleSetRequirementsFormat(format: 'given-when-then' | 'ears') {
@@ -617,8 +723,10 @@ export class SpecPanelProvider {
     if (!transform) {
       specManager.importFile(this.state.activeSpec, stage, filePath);
       this.state.contents[stage] = specManager.readStage(this.state.activeSpec, stage) ?? '';
-      const progress = stage === 'tasks' ? specManager.readTaskProgress(this.state.activeSpec) : null;
-      const requirementsFormat = specManager.readConfig(this.state.activeSpec)?.requirementsFormat ?? undefined;
+      const progress =
+        stage === 'tasks' ? specManager.readTaskProgress(this.state.activeSpec) : null;
+      const requirementsFormat =
+        specManager.readConfig(this.state.activeSpec)?.requirementsFormat ?? undefined;
       this.postMessage({
         type: 'specOpened',
         specName: this.state.activeSpec,
@@ -632,7 +740,6 @@ export class SpecPanelProvider {
       return;
     }
 
-    const fs = require('fs') as typeof import('fs');
     const content = fs.readFileSync(filePath, 'utf-8');
     const specConfig = specManager.readConfig(this.state.activeSpec);
     const ctx: PromptContext = {
@@ -642,7 +749,8 @@ export class SpecPanelProvider {
       lightDesign: stage === 'design' ? specConfig?.lightDesign : undefined,
       requirementsFormat: stage === 'requirements' ? specConfig?.requirementsFormat : undefined,
     };
-    const systemPrompt = specManager.loadCustomPrompt(this.state.activeSpec, stage) || buildSystemPrompt(stage, ctx);
+    const systemPrompt =
+      specManager.loadCustomPrompt(this.state.activeSpec, stage) || buildSystemPrompt(stage, ctx);
     const userPrompt = `Convert the following document into the proper ${stage} format for this spec.\n\n---\n\n${content}`;
 
     let accumulated = '';
@@ -660,12 +768,17 @@ export class SpecPanelProvider {
           specManager.writeStage(this.state.activeSpec!, stage, accumulated);
           this.state.contents[stage] = accumulated;
           if (stage === 'tasks') {
-            const progress = specManager.syncProgressFromMarkdown(this.state.activeSpec!, accumulated);
+            const progress = specManager.syncProgressFromMarkdown(
+              this.state.activeSpec!,
+              accumulated
+            );
             this.postMessage({ type: 'progressUpdated', progress });
           }
           const specName = this.state.activeSpec;
           this.postMessage({ type: 'streamDone', stage, content: accumulated });
-          const requirementsFormat = specName ? specManager.readConfig(specName)?.requirementsFormat ?? undefined : undefined;
+          const requirementsFormat = specName
+            ? (specManager.readConfig(specName)?.requirementsFormat ?? undefined)
+            : undefined;
           this.postMessage({
             type: 'specOpened',
             specName: specName ?? '',
@@ -971,7 +1084,9 @@ export class SpecPanelProvider {
       return;
     }
 
-    const specPath = `.specs/${this.state.activeSpec}`;
+    const specsFolder =
+      vscode.workspace.getConfiguration('nspec').get<string>('specsFolder') || '.specs';
+    const specPath = `${specsFolder}/${this.state.activeSpec}`;
 
     // Concise instruction — the agent reads the spec files itself,
     // picks up CLAUDE.md and workspace context naturally.
@@ -985,16 +1100,14 @@ export class SpecPanelProvider {
     if (allCommands.includes('claude-vscode.editor.open')) {
       // Claude Code: editor.open(sessionId, initialPrompt, viewColumn)
       // undefined sessionId → new conversation, initialPrompt auto-submits
-      await vscode.commands.executeCommand(
-        'claude-vscode.editor.open', undefined, prompt,
-      );
+      await vscode.commands.executeCommand('claude-vscode.editor.open', undefined, prompt);
     } else if (allCommands.includes('codex.startSession')) {
       // Codex
       await vscode.commands.executeCommand('codex.startSession', { prompt });
     } else {
       await vscode.env.clipboard.writeText(prompt);
       vscode.window.showInformationMessage(
-        'No AI agent (Claude Code / Codex) detected. Task prompt copied to clipboard.',
+        'No AI agent (Claude Code / Codex) detected. Task prompt copied to clipboard.'
       );
     }
   }
@@ -1336,6 +1449,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .md-rendered a{color:var(--accent)}
 .stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);font-size:.85em}
 @keyframes blink{50%{opacity:0}}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* Empty / welcome state */
 #welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--text-muted)}
@@ -1406,10 +1520,41 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .modal-input::placeholder{color:var(--text-muted)}
 textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+
+/* ── Wizard (D1: Guided creation) ────────────────────── */
+.wizard-modal{width:520px;max-height:calc(100vh - 80px);overflow-y:auto}
+.wizard-stepper{display:flex;align-items:center;gap:0;margin-bottom:22px}
+.wizard-step-node{display:flex;align-items:center;gap:6px}
+.wizard-step-circle{width:24px;height:24px;border-radius:50%;background:var(--surface3);border:1.5px solid var(--border);color:var(--text-muted);font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
+.wizard-step-circle.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.wizard-step-circle.done{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.wizard-step-label{font-size:11px;color:var(--text-muted);font-weight:500;transition:color .2s;white-space:nowrap}
+.wizard-step-label.active{color:var(--text)}
+.wizard-step-connector{flex:1;height:1px;background:var(--border);margin:0 8px}
+.wizard-step-connector.done{background:var(--accent)}
+.wizard-pane{display:none}
+.wizard-pane.active{display:block}
+
+/* Clarification area (D2) */
+.clarify-loading{font-size:12.5px;color:var(--text-muted);padding:10px 0;display:flex;align-items:center;gap:8px}
+.clarify-mc-question{margin-bottom:16px}
+.clarify-mc-qlabel{font-size:12.5px;font-weight:500;color:var(--text);margin-bottom:7px;line-height:1.4}
+.clarify-mc-options{display:flex;flex-direction:column;gap:4px}
+.clarify-mc-opt{display:flex;align-items:flex-start;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12.5px;color:var(--text-dim);transition:all .12s;line-height:1.4}
+.clarify-mc-opt:hover{border-color:var(--accent);color:var(--text);background:var(--accent-dim)}
+.clarify-mc-opt input[type=radio]{accent-color:var(--accent);margin-top:2px;flex-shrink:0;cursor:pointer}
+.clarify-mc-opt.selected{border-color:var(--accent);color:var(--text);background:var(--accent-dim)}
+.clarify-mc-custom-input{width:100%;background:var(--surface3);border:none;border-top:1px solid var(--border);color:var(--text);padding:6px 8px;font-size:12px;font-family:inherit;border-radius:0 0 var(--radius-sm) var(--radius-sm);margin-top:4px;display:none}
+.clarify-mc-custom-input:focus{outline:none}
+.clarify-mc-custom-input::placeholder{color:var(--text-muted)}
+.clarify-skip-link{font-size:11.5px;color:var(--text-muted);text-decoration:none;cursor:pointer;transition:color .15s}
+.clarify-skip-link:hover{color:var(--text)}
 .btn-modal-cancel{padding:7px 16px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);cursor:pointer;font-size:13px;transition:all .15s}
 .btn-modal-cancel:hover{border-color:var(--text-muted)}
 .btn-modal-ok{padding:7px 16px;background:var(--accent);border:none;color:#fff;border-radius:var(--radius-sm);cursor:pointer;font-size:13px;font-weight:500;transition:background .15s}
 .btn-modal-ok:hover{background:var(--accent-hover)}
+.btn-modal-ok:disabled{opacity:.45;cursor:not-allowed}
+.btn-modal-ok:disabled:hover{background:var(--accent)}
 
 /* ── Task progress bar ───────────────────────────────── */
 .progress-bar-wrap{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px}
@@ -1560,61 +1705,56 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
   </div>
 </div>
 
-<!-- ── New Spec Modal ──────────────────────────────────── -->
+<!-- ── New Spec Wizard (D1: Guided creation) ──────────── -->
 <div class="modal-overlay hidden" id="modal-new">
-  <div class="modal">
-    <div class="modal-title">New Spec</div>
-    <div class="modal-sub">Enter a spec name and either a feature description or a Jira issue URL (Jira requires Rovo MCP).</div>
-    <div class="modal-field">
-      <label class="modal-label" for="new-spec-name">Spec name</label>
-      <input class="modal-input" id="new-spec-name" type="text" placeholder="e.g. User Authentication, M2 Gatekeeper Attack">
-    </div>
-    <div class="modal-field">
-      <label class="modal-label">Spec type</label>
-      <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">
-        <label style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;color:var(--text-dim);transition:all .15s" class="spec-type-opt" data-type="feature">
-          <input type="radio" name="spec-type" value="feature" checked style="accent-color:var(--accent)"> Feature
-        </label>
-        <label style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;color:var(--text-dim);transition:all .15s" class="spec-type-opt" data-type="bugfix">
-          <input type="radio" name="spec-type" value="bugfix" style="accent-color:var(--accent)"> Bugfix
-        </label>
-        <label style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;color:var(--text-dim);transition:all .15s" class="spec-type-opt" data-type="design-first">
-          <input type="radio" name="spec-type" value="design-first" style="accent-color:var(--accent)"> Design First
-        </label>
+  <div class="modal wizard-modal">
+
+    <!-- ── Step 1: Describe (type + name + description) ── -->
+    <div class="wizard-pane active" id="wizard-pane-1">
+      <div class="modal-title">New Spec</div>
+      <div class="modal-field">
+        <label class="modal-label">Type</label>
+        <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;color:var(--text-dim);transition:all .15s" class="spec-type-opt" data-type="feature">
+            <input type="radio" name="spec-type" value="feature" checked style="accent-color:var(--accent)"> Feature
+          </label>
+          <label style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;color:var(--text-dim);transition:all .15s" class="spec-type-opt" data-type="bugfix">
+            <input type="radio" name="spec-type" value="bugfix" style="accent-color:var(--accent)"> Bugfix
+          </label>
+          <label style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;color:var(--text-dim);transition:all .15s" class="spec-type-opt" data-type="design-first">
+            <input type="radio" name="spec-type" value="design-first" style="accent-color:var(--accent)"> Design First
+          </label>
+        </div>
+      </div>
+      <div class="modal-field">
+        <label class="modal-label" for="new-spec-name">Name</label>
+        <input class="modal-input" id="new-spec-name" type="text" placeholder="e.g. User Authentication, M2 Gatekeeper Attack">
+      </div>
+      <div class="modal-field" id="jira-field">
+        <label class="modal-label" for="new-spec-jira">Jira URL <span style="font-weight:400;color:var(--text-muted)">(optional — auto-selects Feature type)</span></label>
+        <input class="modal-input" id="new-spec-jira" type="url" placeholder="https://your-domain.atlassian.net/browse/PROJ-123">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label" for="new-spec-prompt" id="prompt-label">Description</label>
+        <textarea class="modal-input" id="new-spec-prompt" rows="4" placeholder="Describe the feature, its purpose, key behaviors, and any constraints…"></textarea>
+      </div>
+      <div class="modal-field" id="template-field">
+        <label class="modal-label" for="new-spec-template">Template <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+        <select class="modal-input" id="new-spec-template" style="padding:7px 11px">
+          <option value="">No template — start blank</option>
+          <option value="rest-api">REST API — CRUD endpoints, auth, validation</option>
+          <option value="game-feature">Game Feature — Player-facing feature</option>
+          <option value="ml-experiment">ML Experiment — Model training / evaluation</option>
+          <option value="cli-tool">CLI Tool — Command-line application</option>
+          <option value="library-sdk">Library / SDK — Reusable package</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-modal-cancel" id="btn-new-cancel">Cancel</button>
+        <button class="btn-modal-ok" id="btn-wiz-next-1">Generate →</button>
       </div>
     </div>
-    <div class="modal-field" id="template-field">
-      <label class="modal-label" for="new-spec-template">Template (optional)</label>
-      <select class="modal-input" id="new-spec-template" style="padding:7px 11px">
-        <option value="">No template — start blank</option>
-        <option value="rest-api">REST API — CRUD endpoints, auth, validation</option>
-        <option value="game-feature">Game Feature — Player-facing feature</option>
-        <option value="ml-experiment">ML Experiment — Model training / evaluation</option>
-        <option value="cli-tool">CLI Tool — Command-line application</option>
-        <option value="library-sdk">Library / SDK — Reusable package</option>
-      </select>
-    </div>
-    <div class="modal-field" id="jira-field">
-      <label class="modal-label" for="new-spec-jira">Jira issue URL (optional)</label>
-      <input class="modal-input" id="new-spec-jira" type="url" placeholder="https://your-domain.atlassian.net/browse/PROJ-123">
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">User stories only. Requires Rovo MCP. If set, the description below is ignored.</div>
-    </div>
-    <div class="modal-field">
-      <label class="modal-label" for="new-spec-prompt" id="prompt-label">Feature description</label>
-      <textarea class="modal-input" id="new-spec-prompt" placeholder="Describe the feature, its purpose, key behaviors, and any constraints…"></textarea>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px" id="prompt-hint">Or use a Jira user story URL above.</div>
-    </div>
-    <div class="modal-field" id="light-design-field">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text)">
-        <input type="checkbox" id="new-spec-light-design" style="accent-color:var(--accent)">
-        Light design (infer from codebase)
-      </label>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Keep design concise; infer from existing architecture and adjacent components.</div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-modal-cancel" id="btn-new-cancel">Cancel</button>
-      <button class="btn-modal-ok" id="btn-new-ok">Generate Requirements →</button>
-    </div>
+
   </div>
 </div>
 
@@ -2532,89 +2672,109 @@ document.querySelectorAll('.stage-pill').forEach(pill => {
   });
 });
 
-// ── New spec modal ────────────────────────────────────────────────────────────
+// ── New spec wizard (D1 + D2) ─────────────────────────────────────────────────
 // Delegate from #app so "New Spec" / "Create your first spec" work even if direct
 // listeners failed (script timing, DOM not ready, or Cursor/webview quirks).
 document.getElementById('app')?.addEventListener('click', (e) => {
   const t = e.target && e.target.closest && e.target.closest('#btn-new-spec, #btn-welcome-new');
   if (t) { e.preventDefault(); openNewModal(); }
 });
-document.getElementById('btn-new-cancel')?.addEventListener('click', closeNewModal);
-document.getElementById('btn-new-ok')?.addEventListener('click', submitNewSpec);
 
 function openNewModal() {
   document.getElementById('modal-new')?.classList.remove('hidden');
+  updateStep1ForType();
   document.getElementById('new-spec-name')?.focus();
-  updateNewModalForType();
 }
+
 function closeNewModal() {
   document.getElementById('modal-new')?.classList.add('hidden');
-  document.getElementById('new-spec-name').value = '';
-  document.getElementById('new-spec-prompt').value = '';
-  const jiraInput = document.getElementById('new-spec-jira');
-  if (jiraInput && 'value' in jiraInput) jiraInput.value = '';
-  const lightCheck = document.getElementById('new-spec-light-design');
-  if (lightCheck && 'checked' in lightCheck) lightCheck.checked = false;
-  document.getElementById('new-spec-template').value = '';
-  document.querySelector('input[name="spec-type"][value="feature"]').checked = true;
-  updateNewModalForType();
+  const nameEl = document.getElementById('new-spec-name');
+  if (nameEl) nameEl.value = '';
+  const promptEl = document.getElementById('new-spec-prompt');
+  if (promptEl) promptEl.value = '';
+  const jiraEl = document.getElementById('new-spec-jira');
+  if (jiraEl && 'value' in jiraEl) jiraEl.value = '';
+  const tmplEl = document.getElementById('new-spec-template');
+  if (tmplEl) tmplEl.value = '';
+  const featRadio = document.querySelector('input[name="spec-type"][value="feature"]');
+  if (featRadio) featRadio.checked = true;
 }
+
 function getSelectedSpecType() {
   return document.querySelector('input[name="spec-type"]:checked')?.value || 'feature';
 }
-function updateNewModalForType() {
+
+function updateStep1ForType() {
   const specType = getSelectedSpecType();
-  const promptLabel = document.getElementById('prompt-label');
-  const promptArea = document.getElementById('new-spec-prompt');
-  const okBtn = document.getElementById('btn-new-ok');
-  const templateField = document.getElementById('template-field');
+  const label   = document.getElementById('prompt-label');
+  const area    = document.getElementById('new-spec-prompt');
+  const nextBtn = document.getElementById('btn-wiz-next-1');
   const jiraField = document.getElementById('jira-field');
-  const lightDesignField = document.getElementById('light-design-field');
+  const tmplField = document.getElementById('template-field');
+
   if (specType === 'bugfix') {
-    promptLabel.textContent = 'Bug report';
-    promptArea.placeholder = 'Describe the bug: symptoms, reproduction steps, expected vs actual behavior…';
-    okBtn.textContent = 'Analyze Root Cause →';
-    templateField.style.display = 'none';
+    if (label)   label.textContent = 'Bug report';
+    if (area)    area.placeholder = 'Describe the bug: symptoms, reproduction steps, expected vs actual behavior…';
+    if (nextBtn) nextBtn.textContent = 'Analyze Root Cause →';
     if (jiraField) jiraField.style.display = 'none';
-    if (lightDesignField) lightDesignField.style.display = 'none';
+    if (tmplField) tmplField.style.display = 'none';
   } else if (specType === 'design-first') {
-    promptLabel.textContent = 'Design description';
-    promptArea.placeholder = 'Describe the technical design, architecture, or approach…';
-    okBtn.textContent = 'Generate Design →';
-    templateField.style.display = 'block';
+    if (label)   label.textContent = 'Design description';
+    if (area)    area.placeholder = 'Describe the technical design, architecture, or approach…';
+    if (nextBtn) nextBtn.textContent = 'Generate Design →';
     if (jiraField) jiraField.style.display = 'block';
-    if (lightDesignField) lightDesignField.style.display = 'none';
+    if (tmplField) tmplField.style.display = 'block';
   } else {
-    promptLabel.textContent = 'Feature description';
-    promptArea.placeholder = 'Describe the feature, its purpose, key behaviors, and any constraints…';
-    okBtn.textContent = 'Generate Requirements →';
-    templateField.style.display = 'block';
+    if (label)   label.textContent = 'Description';
+    if (area)    area.placeholder = 'Describe the feature, its purpose, key behaviors, and any constraints…';
+    if (nextBtn) nextBtn.textContent = 'Generate →';
     if (jiraField) jiraField.style.display = 'block';
-    if (lightDesignField) lightDesignField.style.display = 'block';
+    if (tmplField) tmplField.style.display = 'block';
   }
-}
-document.querySelectorAll('input[name="spec-type"]').forEach(r => {
-  r.addEventListener('change', updateNewModalForType);
-});
-function submitNewSpec() {
-  const name = document.getElementById('new-spec-name')?.value?.trim();
-  const prompt = document.getElementById('new-spec-prompt')?.value?.trim();
-  const jiraUrl = document.getElementById('new-spec-jira')?.value?.trim();
-  const lightDesign = document.getElementById('new-spec-light-design')?.checked ?? false;
-  if (!name) { alert('Please enter a spec name.'); return; }
-  if (!prompt && !jiraUrl) {
-    alert('Enter a feature description or a Jira user story URL (user stories only).');
-    return;
-  }
-  const specType = getSelectedSpecType();
-  const template = document.getElementById('new-spec-template')?.value || '';
-  closeNewModal();
-  vscode.postMessage({ command: 'createSpec', specName: name, prompt: prompt || '', specType, template, jiraUrl: jiraUrl || undefined, lightDesign });
 }
 
-document.getElementById('new-spec-prompt')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.metaKey) submitNewSpec();
+function getWizardFormData() {
+  return {
+    specName:    document.getElementById('new-spec-name')?.value?.trim()   || '',
+    specType:    getSelectedSpecType(),
+    template:    document.getElementById('new-spec-template')?.value       || '',
+    description: document.getElementById('new-spec-prompt')?.value?.trim() || '',
+    jiraUrl:     document.getElementById('new-spec-jira')?.value?.trim()   || '',
+  };
+}
+
+// Jira URL → auto-infer Feature type
+document.getElementById('new-spec-jira')?.addEventListener('input', (e) => {
+  const val = e.target?.value?.trim() || '';
+  if (val && val.includes('atlassian.net')) {
+    const radio = document.querySelector('input[name="spec-type"][value="feature"]');
+    if (radio && !radio.checked) { radio.checked = true; updateStep1ForType(); }
+  }
 });
+
+// Spec type change
+document.querySelectorAll('input[name="spec-type"]').forEach(r => {
+  r.addEventListener('change', updateStep1ForType);
+});
+
+// Step 1 primary action: Clarify → OR direct generate (bugfix/design-first)
+document.getElementById('btn-wiz-next-1')?.addEventListener('click', () => {
+  const d = getWizardFormData();
+  if (!d.specName) { document.getElementById('new-spec-name')?.focus(); showToast('Please enter a spec name.'); return; }
+  if (!d.description && !d.jiraUrl) { document.getElementById('new-spec-prompt')?.focus(); showToast('Enter a description or Jira URL.'); return; }
+  closeNewModal();
+  vscode.postMessage({ command: 'createSpec', specName: d.specName, prompt: d.description, specType: d.specType, template: d.template, jiraUrl: d.jiraUrl || undefined });
+});
+
+document.getElementById('btn-new-cancel')?.addEventListener('click', closeNewModal);
+
+document.getElementById('new-spec-name')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-wiz-next-1')?.click(); }
+});
+document.getElementById('new-spec-prompt')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.metaKey) document.getElementById('btn-wiz-next-1')?.click();
+});
+
 
 // ── Delete modal ──────────────────────────────────────────────────────────────
 function openDeleteModal(name) {

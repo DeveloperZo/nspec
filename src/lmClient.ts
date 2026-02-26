@@ -155,6 +155,7 @@ async function streamOpenAICompat(
     const decoder = new TextDecoder();
     let buf = '';
 
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       if (token.isCancellationRequested) break;
       const { done, value } = await reader.read();
@@ -255,6 +256,7 @@ async function streamAnthropicDirect(
     const decoder = new TextDecoder();
     let buf = '';
 
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       if (token.isCancellationRequested) break;
       const { done, value } = await reader.read();

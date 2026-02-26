@@ -201,7 +201,7 @@ async function handleStatusCommand(
 
     const verify = specManager.readStage(spec.name, 'verify');
     if (verify) {
-      const scoreMatch = verify.match(/(?:Health\s*Score|Score)\s*[:\-]?\s*(\d+)\s*(?:\/\s*100)?/i);
+      const scoreMatch = verify.match(/(?:Health\s*Score|Score)\s*[:_-]?\s*(\d+)\s*(?:\/\s*100)?/i);
       if (scoreMatch) {
         stream.markdown(`\nHealth Score: **${scoreMatch[1]}/100**\n`);
       }
@@ -333,12 +333,10 @@ async function handleWithSpecContext(
   const systemPrompt = `You are a helpful coding assistant. The user has referenced a specification. Use it as context to help them.\n\n## Spec: ${folderName}\n\n${specContext}`;
   const userPrompt = request.prompt.replace(/(?:#spec:|spec:)[a-z0-9_-]+/i, '').trim();
 
-  let response = '';
   await ai.streamCompletion(
     systemPrompt,
     userPrompt || 'Summarize this spec and suggest next steps.',
     (chunk) => {
-      response += chunk;
       stream.markdown(chunk);
     },
     () => {},

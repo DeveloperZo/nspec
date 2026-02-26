@@ -13,9 +13,9 @@
  *   Test scaffold:   node test-harness.mjs --stage test --input-dir .harness-runs/v2-* --test-config test.json
  *
  * Env:
- *   SPECPILOT_API_KEY   — OpenAI or Anthropic API key (required)
- *   SPECPILOT_API_BASE  — Base URL (default: https://api.openai.com/v1)
- *   SPECPILOT_MODEL     — Model ID (default: gpt-4o)
+ *   NSPEC_API_KEY   — OpenAI or Anthropic API key (required)
+ *   NSPEC_API_BASE  — Base URL (default: https://api.openai.com/v1)
+ *   NSPEC_MODEL     — Model ID (default: gpt-4o)
  */
 
 import fs from 'fs';
@@ -45,9 +45,9 @@ const REFINE_STAGE   = getArg('--refine-stage') || null;
 const TEST_CONFIG    = getArg('--test-config') || null;
 const CASCADE        = args.includes('--cascade');
 
-const API_KEY    = process.env.SPECPILOT_API_KEY || '';
-const BASE_URL   = (process.env.SPECPILOT_API_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
-const MODEL      = process.env.SPECPILOT_MODEL || 'gpt-4o';
+const API_KEY    = process.env.NSPEC_API_KEY || '';
+const BASE_URL   = (process.env.NSPEC_API_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
+const MODEL      = process.env.NSPEC_MODEL || 'gpt-4o';
 const IS_ANTHROPIC = BASE_URL.includes('anthropic') || API_KEY.startsWith('sk-ant');
 
 const ALL_STAGES = ['requirements', 'design', 'tasks', 'verify', 'refine', 'test'];
@@ -55,7 +55,7 @@ const ALL_STAGES = ['requirements', 'design', 'tasks', 'verify', 'refine', 'test
 // ── Validation ──────────────────────────────────────────────────────────────
 
 if (!API_KEY) {
-  console.error('Error: SPECPILOT_API_KEY env var is required.');
+  console.error('Error: NSPEC_API_KEY env var is required.');
   process.exit(1);
 }
 if (STAGE && !ALL_STAGES.includes(STAGE)) {
