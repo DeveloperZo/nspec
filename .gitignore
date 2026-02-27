@@ -24,3 +24,6 @@ __pycache__/
 # Editor
 .DS_Store
 Thumbs.db
+
+# Cursor IDE workspace files (excluded from VSIX already; keep out of git too)
+.cursor/
