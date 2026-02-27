@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { LMClient } from './lmClient';
 import * as specManager from './specManager';
+import type { ToExtensionMessage, FromExtensionMessage } from './webviewMessages';
 import { getWorkspaceRoot } from './workspace';
 import { TaskRunner } from './taskRunner';
 import {
@@ -66,7 +67,7 @@ export class SpecPanelProvider {
     this.taskRunner = new TaskRunner((text) => this.postMessage({ type: 'taskOutput', text }));
   }
 
-  // ─── Public API ────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Public API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /** Called by the file watcher when .specs/ files change externally. */
   refreshFromDisk() {
@@ -96,19 +97,19 @@ export class SpecPanelProvider {
     const models = await this.ai.getAvailableModels();
     if (models.length === 0) {
       vscode.window.showWarningMessage(
-        'nSpec: No AI model found. Add an API key in Settings → nSpec (Cursor), or sign in to GitHub Copilot (VS Code).'
+        'nSpec: No AI model found. Add an API key in Settings â†’ nSpec (Cursor), or sign in to GitHub Copilot (VS Code).'
       );
       return;
     }
 
     const items: (vscode.QuickPickItem & { id: string })[] = models.map((m) => ({
       label: m.name,
-      description: `${m.vendor} · ${m.id}`,
+      description: `${m.vendor} Â· ${m.id}`,
       id: m.id,
     }));
 
     const picked = (await vscode.window.showQuickPick(items, {
-      title: 'nSpec — Select AI Model',
+      title: 'nSpec â€” Select AI Model',
       placeHolder: 'Choose the model to use for spec generation',
     })) as (vscode.QuickPickItem & { id: string }) | undefined;
 
@@ -240,7 +241,7 @@ export class SpecPanelProvider {
         const msg = err instanceof Error ? err.message : String(err);
         const clean = msg.replace(/^[\s\S]*?Error:\s*/i, '').slice(0, 120);
         vscode.window.showErrorMessage(
-          `nSpec: ${clean}${clean.length >= 120 ? '…' : ''}. Check Settings → nSpec if it continues.`
+          `nSpec: ${clean}${clean.length >= 120 ? 'â€¦' : ''}. Check Settings â†’ nSpec if it continues.`
         );
       }
     );
@@ -260,7 +261,7 @@ export class SpecPanelProvider {
     vscode.window.showInformationMessage('nSpec: Spec generated from conversation transcript.');
   }
 
-  // ─── Panel lifecycle ───────────────────────────────────────────────────────
+  // â”€â”€â”€ Panel lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private createPanel() {
     this.panel = vscode.window.createWebviewPanel('nspec', 'nSpec', vscode.ViewColumn.One, {
@@ -274,10 +275,10 @@ export class SpecPanelProvider {
       dark: vscode.Uri.joinPath(this.context.extensionUri, 'media', 'icon.png'),
     };
 
-    this.panel.webview.html = this.buildHtml();
+    this.panel.webview.html = this.buildHtml(this.panel.webview);
 
     this.panel.webview.onDidReceiveMessage(
-      (msg: unknown) => this.handleMessage(msg as { command: string; [key: string]: unknown }),
+      (msg: unknown) => this.handleMessage(msg as ToExtensionMessage),
       undefined,
       this.context.subscriptions
     );
@@ -292,13 +293,13 @@ export class SpecPanelProvider {
     );
   }
 
-  private postMessage(msg: object) {
+  private postMessage(msg: FromExtensionMessage) {
     this.panel?.webview.postMessage(msg);
   }
 
-  // ─── Message handling ──────────────────────────────────────────────────────
+  // â”€â”€â”€ Message handling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  private async handleMessage(msg: { command: string; [key: string]: unknown }) {
+  private async handleMessage(msg: ToExtensionMessage) {
     switch (msg.command) {
       case 'ready':
         await this.sendInit();
@@ -306,16 +307,16 @@ export class SpecPanelProvider {
 
       case 'createSpec':
         await this.handleCreateSpec(
-          msg.specName as string,
-          msg.prompt as string,
-          msg.specType as string,
-          msg.template as string,
-          msg.jiraUrl as string | undefined
+          msg.specName,
+          msg.prompt,
+          msg.specType,
+          msg.template,
+          msg.jiraUrl
         );
         break;
 
       case 'openSpec':
-        await this.handleOpenSpec(msg.specName as string);
+        await this.handleOpenSpec(msg.specName);
         break;
 
       case 'generateDesign':
@@ -327,15 +328,15 @@ export class SpecPanelProvider {
         break;
 
       case 'refine':
-        await this.handleRefine(msg.stage as Stage, msg.feedback as string);
+        await this.handleRefine(msg.stage, msg.feedback);
         break;
 
       case 'saveContent':
-        this.handleSaveContent(msg.stage as Stage, msg.content as string);
+        this.handleSaveContent(msg.stage, msg.content);
         break;
 
       case 'setStage':
-        this.state.activeStage = msg.stage as Stage;
+        this.state.activeStage = msg.stage;
         break;
 
       case 'runAllTasks':
@@ -344,16 +345,16 @@ export class SpecPanelProvider {
 
       case 'openInEditor':
         if (this.state.activeSpec) {
-          specManager.openFileInEditor(this.state.activeSpec, msg.stage as Stage);
+          specManager.openFileInEditor(this.state.activeSpec, msg.stage);
         }
         break;
 
       case 'deleteSpec':
-        this.handleDeleteSpec(msg.specName as string);
+        this.handleDeleteSpec(msg.specName);
         break;
 
       case 'selectModel':
-        await this.handleSelectModel(msg.modelId as string);
+        await this.handleSelectModel(msg.modelId);
         break;
 
       case 'pickModelFromPalette':
@@ -365,7 +366,7 @@ export class SpecPanelProvider {
         break;
 
       case 'toggleTask':
-        this.handleToggleTask(msg.taskId as string);
+        this.handleToggleTask(msg.taskId);
         break;
 
       case 'scaffoldPrompts':
@@ -391,11 +392,11 @@ export class SpecPanelProvider {
         break;
 
       case 'renameSpec':
-        this.handleRenameSpec(msg.oldName as string, msg.newName as string);
+        this.handleRenameSpec(msg.oldName, msg.newName);
         break;
 
       case 'cascadeFromStage':
-        await this.handleCascadeFromStage(msg.fromStage as string);
+        await this.handleCascadeFromStage(msg.fromStage);
         break;
 
       case 'generateRequirements':
@@ -403,7 +404,7 @@ export class SpecPanelProvider {
         break;
 
       case 'runTask':
-        await this.handleRunTaskSupervised(msg.taskLabel as string);
+        await this.handleRunTaskSupervised(msg.taskLabel);
         break;
 
       case 'runAllTasksSupervised':
@@ -411,7 +412,7 @@ export class SpecPanelProvider {
         break;
 
       case 'checkTask':
-        await this.handleCheckTask(msg.taskLabel as string);
+        await this.handleCheckTask(msg.taskLabel);
         break;
 
       case 'checkAllTasks':
@@ -423,7 +424,7 @@ export class SpecPanelProvider {
         break;
 
       case 'setRequirementsFormat':
-        this.handleSetRequirementsFormat(msg.format as 'given-when-then' | 'ears');
+        this.handleSetRequirementsFormat(msg.format);
         break;
 
       case 'cancelTaskRun':
@@ -432,28 +433,28 @@ export class SpecPanelProvider {
 
       case 'startClarification':
         await this.handleStartClarification(
-          msg.specName as string,
-          msg.description as string,
-          msg.specType as string,
-          msg.template as string,
-          msg.jiraUrl as string | undefined
+          msg.specName,
+          msg.description,
+          msg.specType,
+          msg.template,
+          msg.jiraUrl
         );
         break;
 
       case 'submitClarification':
         await this.handleSubmitClarification(
-          msg.specName as string,
-          msg.description as string,
-          msg.specType as string,
-          msg.qaTranscript as string,
-          msg.template as string,
-          msg.jiraUrl as string | undefined
+          msg.specName,
+          msg.description,
+          msg.specType,
+          msg.qaTranscript,
+          msg.template,
+          msg.jiraUrl
         );
         break;
     }
   }
 
-  // ─── Init ──────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async sendInit() {
     const specs = specManager.listSpecs().map((s) => ({
@@ -485,7 +486,7 @@ export class SpecPanelProvider {
     });
   }
 
-  // ─── Create spec ───────────────────────────────────────────────────────────
+  // â”€â”€â”€ Create spec â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async handleCreateSpec(
     specName: string,
@@ -518,7 +519,7 @@ export class SpecPanelProvider {
       };
       if (!parseJiraUrl(jiraUrl.trim())) {
         vscode.window.showErrorMessage(
-          'nSpec: Invalid Jira URL. Use a browse link (e.g. …/browse/PROJ-123).'
+          'nSpec: Invalid Jira URL. Use a browse link (e.g. â€¦/browse/PROJ-123).'
         );
         return;
       }
@@ -583,7 +584,7 @@ export class SpecPanelProvider {
     }
   }
 
-  // ─── Guided clarification (D1 + D2) ────────────────────────────────────────
+  // â”€â”€â”€ Guided clarification (D1 + D2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /** Stream AI clarifying questions back to the webview before spec creation. */
   private async handleStartClarification(
@@ -712,8 +713,8 @@ export class SpecPanelProvider {
 
     const transformPick = await vscode.window.showQuickPick(
       [
-        { label: 'Yes — transform with AI into spec format', value: true },
-        { label: 'No — use file content as-is', value: false },
+        { label: 'Yes â€” transform with AI into spec format', value: true },
+        { label: 'No â€” use file content as-is', value: false },
       ],
       { title: 'Transform with AI?', placeHolder: 'Choose' }
     );
@@ -801,7 +802,7 @@ export class SpecPanelProvider {
     }
   }
 
-  // ─── Open existing spec ────────────────────────────────────────────────────
+  // â”€â”€â”€ Open existing spec â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async handleOpenSpec(specName: string) {
     const specs = specManager.listSpecs();
@@ -837,7 +838,7 @@ export class SpecPanelProvider {
     });
   }
 
-  // ─── Generate stage ────────────────────────────────────────────────────────
+  // â”€â”€â”€ Generate stage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async handleGenerate(stage: 'design' | 'tasks') {
     if (!this.state.activeSpec) return;
@@ -974,7 +975,7 @@ export class SpecPanelProvider {
     );
   }
 
-  // ─── Refine ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Refine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async handleRefine(stage: Stage, feedback: string) {
     if (!this.state.activeSpec || !feedback) return;
@@ -1041,7 +1042,7 @@ export class SpecPanelProvider {
           if (this.state.chatHistory[stage]) {
             this.state.chatHistory[stage]!.push({
               role: 'assistant',
-              text: '✏️ Document updated.',
+              text: 'âœï¸ Document updated.',
             });
           }
           this.state.contents[stage] = accumulated;
@@ -1061,7 +1062,7 @@ export class SpecPanelProvider {
     );
   }
 
-  // ─── Manual save ──────────────────────────────────────────────────────────
+  // â”€â”€â”€ Manual save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private handleSaveContent(stage: Stage, content: string) {
     if (!this.state.activeSpec) return;
@@ -1071,7 +1072,7 @@ export class SpecPanelProvider {
     this.postMessage({ type: 'saved', stage });
   }
 
-  // ─── Run tasks ─────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Run tasks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async handleRunTasks() {
     if (!this.state.activeSpec) return;
@@ -1088,7 +1089,7 @@ export class SpecPanelProvider {
       vscode.workspace.getConfiguration('nspec').get<string>('specsFolder') || '.specs';
     const specPath = `${specsFolder}/${this.state.activeSpec}`;
 
-    // Concise instruction — the agent reads the spec files itself,
+    // Concise instruction â€” the agent reads the spec files itself,
     // picks up CLAUDE.md and workspace context naturally.
     const prompt =
       `Read the spec at ${specPath}/ (requirements.md, design.md, tasks.md).` +
@@ -1099,7 +1100,7 @@ export class SpecPanelProvider {
 
     if (allCommands.includes('claude-vscode.editor.open')) {
       // Claude Code: editor.open(sessionId, initialPrompt, viewColumn)
-      // undefined sessionId → new conversation, initialPrompt auto-submits
+      // undefined sessionId â†’ new conversation, initialPrompt auto-submits
       await vscode.commands.executeCommand('claude-vscode.editor.open', undefined, prompt);
     } else if (allCommands.includes('codex.startSession')) {
       // Codex
@@ -1241,7 +1242,7 @@ export class SpecPanelProvider {
     this.postMessage({ type: 'modelChanged', modelName: model?.name ?? modelId, modelId });
   }
 
-  // ─── Delete spec ───────────────────────────────────────────────────────────
+  // â”€â”€â”€ Delete spec â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private handleDeleteSpec(specName: string) {
     specManager.deleteSpec(specName);
@@ -1258,7 +1259,7 @@ export class SpecPanelProvider {
     this.postMessage({ type: 'specDeleted', specName });
   }
 
-  // ─── Rename spec ──────────────────────────────────────────────────────────
+  // â”€â”€â”€ Rename spec â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private handleRenameSpec(oldName: string, newName: string) {
     if (!oldName || !newName) return;
@@ -1278,7 +1279,7 @@ export class SpecPanelProvider {
     }
   }
 
-  // ─── Cascade from stage ───────────────────────────────────────────────────
+  // â”€â”€â”€ Cascade from stage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async handleCascadeFromStage(fromStage: string) {
     if (!this.state.activeSpec) return;
@@ -1289,7 +1290,7 @@ export class SpecPanelProvider {
     for (let i = startIdx; i < pipeline.length; i++) {
       const stage = pipeline[i];
       if (stage === 'requirements') {
-        // Can't regenerate requirements without a description — skip
+        // Can't regenerate requirements without a description â€” skip
         continue;
       }
       if (stage === 'verify') {
@@ -1302,7 +1303,7 @@ export class SpecPanelProvider {
     }
   }
 
-  // ─── Generate requirements (regenerate) ───────────────────────────────────
+  // â”€â”€â”€ Generate requirements (regenerate) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async handleGenerateRequirements() {
     if (!this.state.activeSpec) return;
@@ -1328,23 +1329,30 @@ export class SpecPanelProvider {
     await this.streamGenerate('requirements', userPrompt, this.state.activeSpec);
   }
 
-  // ─── HTML ──────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ HTML â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  private buildHtml(): string {
+  private buildHtml(webview: vscode.Webview): string {
     const nonce = getNonce();
+    const cspSource = webview.cspSource;
+    const panelCssUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, 'media', 'panel.css')
+    );
+    const panelJsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, 'media', 'panel.js')
+    );
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com; img-src data:; connect-src https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' ${cspSource} https://cdn.jsdelivr.net; style-src 'unsafe-inline' ${cspSource} https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com; img-src data:; connect-src https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com;">
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>nSpec</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+<link rel="stylesheet" href="${panelCssUri}">
+</head>
 <style>
-/* ── Reset & base ─────────────────────────────────────── */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#1e1e2e;
   --surface:#252535;
@@ -1371,12 +1379,12 @@ export class SpecPanelProvider {
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;line-height:1.6;overflow:hidden;pointer-events:auto;cursor:default}
 #app{pointer-events:auto}
 
-/* ── Layout ───────────────────────────────────────────── */
+/* â”€â”€ Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #app{display:flex;height:100vh;overflow:hidden}
 #sidebar{width:220px;min-width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 
-/* ── Sidebar ──────────────────────────────────────────── */
+/* â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .sidebar-header{padding:16px 14px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
 .sidebar-logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;color:var(--text)}
 .sidebar-logo svg{color:var(--accent)}
@@ -1397,7 +1405,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .btn-new{width:100%;padding:8px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:12.5px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s}
 .btn-new:hover{background:var(--accent-hover)}
 
-/* ── Top bar (breadcrumb) ────────────────────────────── */
+/* â”€â”€ Top bar (breadcrumb) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:42px;flex-shrink:0}
 .breadcrumb{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-muted)}
 .breadcrumb-spec{font-weight:600;color:var(--text);font-size:12.5px}
@@ -1420,7 +1428,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .btn-action:disabled{opacity:.4;cursor:not-allowed}
 .btn-action:disabled:hover{border-color:var(--border);color:var(--text)}
 
-/* ── Content area ────────────────────────────────────── */
+/* â”€â”€ Content area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #content{flex:1;overflow:hidden;display:flex;flex-direction:column}
 .stage-view{flex:1;display:none;flex-direction:column;overflow:hidden}
 .stage-view.visible{display:flex}
@@ -1447,7 +1455,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .md-rendered td{padding:6px 12px;border:1px solid var(--border);color:var(--text-dim);font-size:.9em}
 .md-rendered input[type=checkbox]{accent-color:var(--accent);margin-right:6px}
 .md-rendered a{color:var(--accent)}
-.stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);font-size:.85em}
+.stream-cursor::after{content:'â–‹';animation:blink .8s step-end infinite;color:var(--accent);font-size:.85em}
 @keyframes blink{50%{opacity:0}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -1460,14 +1468,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .btn-welcome{padding:9px 20px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:13px;font-weight:500;transition:background .15s}
 .btn-welcome:hover{background:var(--accent-hover)}
 
-/* ── Edit mode textarea ──────────────────────────────── */
+/* â”€â”€ Edit mode textarea â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .edit-textarea{width:100%;min-height:200px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:14px;font-size:13px;font-family:'Consolas','Monaco','Courier New',monospace;line-height:1.6;resize:none;overflow-y:auto;tab-size:2}
 .edit-textarea:focus{outline:none;border-color:var(--border-focus)}
 .md-area .edit-textarea{display:none}
 .md-area.editing .edit-textarea{display:block}
 .md-area.editing .md-rendered{display:none}
 
-/* ── Inline refine ───────────────────────────────────── */
+/* â”€â”€ Inline refine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .refine-inline{display:none;align-items:center;gap:8px;padding:6px 16px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
 .refine-inline.visible{display:flex}
 .refine-input{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:7px 11px;font-size:12.5px;font-family:inherit;resize:none;height:34px;transition:border-color .15s;line-height:1.4}
@@ -1478,36 +1486,36 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .btn-refine-close{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:3px}
 .btn-refine-close:hover{color:var(--text);background:var(--surface3)}
 
-/* ── Cascade dropdown ────────────────────────────────── */
+/* â”€â”€ Cascade dropdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .cascade-dropdown{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:200;min-width:220px;overflow:hidden}
 .cascade-dropdown-item{padding:8px 14px;cursor:pointer;font-size:12.5px;color:var(--text);transition:background .1s}
 .cascade-dropdown-item:hover{background:var(--surface2)}
 .cascade-dropdown-item .cd-desc{font-size:11px;color:var(--text-muted);margin-top:2px}
 
-/* ── Toast notification ──────────────────────────────── */
+/* â”€â”€ Toast notification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 18px;border-radius:var(--radius);font-size:12.5px;font-weight:500;z-index:300;opacity:0;transition:all .3s ease;pointer-events:none;white-space:nowrap}
 .toast.visible{transform:translateX(-50%) translateY(0);opacity:1}
 
-/* ── Sidebar search ──────────────────────────────────── */
+/* â”€â”€ Sidebar search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .sidebar-search{padding:8px 8px 0}
 .sidebar-search-input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:5px 8px;font-size:12px;font-family:inherit;transition:border-color .15s}
 .sidebar-search-input:focus{outline:none;border-color:var(--border-focus)}
 .sidebar-search-input::placeholder{color:var(--text-muted)}
 .specs-count{padding:2px 8px;font-size:10px;color:var(--text-muted)}
 
-/* ── Inline rename ───────────────────────────────────── */
+/* â”€â”€ Inline rename â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .rename-input{background:var(--surface2);border:1px solid var(--border-focus);color:var(--text);border-radius:3px;padding:2px 6px;font-size:12.5px;font-family:inherit;width:100%;outline:none}
 
-/* ── Empty stage CTA ─────────────────────────────────── */
+/* â”€â”€ Empty stage CTA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .empty-stage{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:60px 20px;color:var(--text-muted);text-align:center}
 .empty-stage-text{font-size:13px}
 .btn-empty-cta{padding:8px 18px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:12.5px;font-weight:500;transition:background .15s}
 .btn-empty-cta:hover{background:var(--accent-hover)}
 
-/* ── Custom prompts indicator ────────────────────────── */
+/* â”€â”€ Custom prompts indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .custom-prompts-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:4px;vertical-align:middle}
 
-/* ── Modals ───────────────────────────────────────────── */
+/* â”€â”€ Modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(4px);pointer-events:auto}
 .modal-overlay.hidden{display:none}
 .modal{background:var(--surface);pointer-events:auto;border:1px solid var(--border);border-radius:12px;padding:24px;width:480px;max-width:calc(100vw - 32px);box-shadow:0 24px 60px rgba(0,0,0,.5)}
@@ -1521,7 +1529,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
 
-/* ── Wizard (D1: Guided creation) ────────────────────── */
+/* â”€â”€ Wizard (D1: Guided creation) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .wizard-modal{width:520px;max-height:calc(100vh - 80px);overflow-y:auto}
 .wizard-stepper{display:flex;align-items:center;gap:0;margin-bottom:22px}
 .wizard-step-node{display:flex;align-items:center;gap:6px}
@@ -1556,50 +1564,48 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
 .btn-modal-ok:disabled{opacity:.45;cursor:not-allowed}
 .btn-modal-ok:disabled:hover{background:var(--accent)}
 
-/* ── Task progress bar ───────────────────────────────── */
+/* â”€â”€ Task progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .progress-bar-wrap{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px}
 .progress-bar-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s}
 .progress-label{font-size:10px;color:var(--text-muted)}
-/* ── Verify health score badge ───────────────────────── */
+/* â”€â”€ Verify health score badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .health-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:11.5px;font-weight:600;border:1px solid}
 .health-excellent{background:rgba(166,227,161,.12);color:var(--green);border-color:rgba(166,227,161,.3)}
 .health-good{background:rgba(124,106,247,.12);color:var(--accent);border-color:rgba(124,106,247,.3)}
 .health-fair{background:rgba(249,226,175,.12);color:var(--yellow);border-color:rgba(249,226,175,.3)}
 .health-poor{background:var(--red-dim);color:var(--red);border-color:rgba(243,139,168,.3)}
-/* ── OpenSpec badge ──────────────────────────────────── */
+/* â”€â”€ OpenSpec badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .openspec-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;background:rgba(124,106,247,.1);border:1px solid rgba(124,106,247,.3);border-radius:10px;font-size:10px;color:var(--accent);cursor:pointer}
 .openspec-badge:hover{background:var(--accent-dim)}
-/* ── Interactive task checkboxes ─────────────────────── */
+/* â”€â”€ Interactive task checkboxes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .md-rendered input[type=checkbox]{accent-color:var(--accent);cursor:pointer;width:13px;height:13px}
 .task-row{display:flex;align-items:baseline;gap:6px}
 .task-row.done label{text-decoration:line-through;color:var(--text-muted)}
-/* ── Spec dots with 4 stages ────────────────────────── */
+/* â”€â”€ Spec dots with 4 stages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .spec-item-dots{display:flex;gap:3px;align-items:center}
 .stage-dot.verify{background:var(--yellow)}
-/* ── Verify stage view specific ─────────────────────── */
+/* â”€â”€ Verify stage view specific â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .verify-header{padding:16px 32px 0;display:flex;align-items:center;gap:10px}
-/* ── Model selector chip ─────────────────────────────── */
+/* â”€â”€ Model selector chip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .model-chip{display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;cursor:pointer;font-size:11.5px;color:var(--text-muted);transition:all .15s;white-space:nowrap;max-width:200px;overflow:hidden}
 .model-chip:hover{border-color:var(--accent);color:var(--text)}
 .model-chip svg{flex-shrink:0;color:var(--accent)}
 .model-chip-name{overflow:hidden;text-overflow:ellipsis}
 .model-chip-none{color:var(--red);border-color:var(--red-dim)}
 .model-chip-none:hover{border-color:var(--red)}
-/* ── API key warning ──────────────────────────────────── */
+/* â”€â”€ API key warning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #api-warning{display:none;align-items:center;gap:10px;padding:8px 16px;background:var(--red-dim);border-bottom:1px solid var(--red);font-size:12.5px;color:var(--red)}
 #api-warning.visible{display:flex}
 .link-btn{background:none;border:none;color:var(--red);text-decoration:underline;cursor:pointer;font-size:12.5px}
 
-/* ── Spinner ──────────────────────────────────────────── */
+/* â”€â”€ Spinner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
-.spinner.accent{border-color:var(--accent-dim);border-top-color:var(--accent)}
 </style>
-</head>
 <body>
 <div id="app">
 
-  <!-- ── Sidebar ──────────────────────────────────────── -->
+  <!-- â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div id="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-logo">
@@ -1608,7 +1614,7 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
       </div>
     </div>
     <div class="sidebar-search">
-      <input type="text" class="sidebar-search-input" id="sidebar-search" placeholder="Filter specs…">
+      <input type="text" class="sidebar-search-input" id="sidebar-search" placeholder="Filter specsâ€¦">
     </div>
     <div class="specs-count" id="specs-count"></div>
     <div class="specs-list" id="specs-list"></div>
@@ -1620,27 +1626,27 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
     </div>
   </div>
 
-  <!-- ── Main ─────────────────────────────────────────── -->
+  <!-- â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div id="main">
 
     <!-- Top bar -->
     <div id="topbar">
       <div class="breadcrumb">
-        <span class="breadcrumb-spec" id="bc-spec">—</span>
-        <span class="bc-sep">›</span>
+        <span class="breadcrumb-spec" id="bc-spec">â€”</span>
+        <span class="bc-sep">â€º</span>
         <div class="stage-pills" id="stage-pills">
           <div class="stage-pill" data-stage="requirements" id="pill-requirements">
             <span class="pill-num">1</span> Requirements
           </div>
-          <span class="bc-arrow">›</span>
+          <span class="bc-arrow">â€º</span>
           <div class="stage-pill" data-stage="design" id="pill-design">
             <span class="pill-num">2</span> Design
           </div>
-          <span class="bc-arrow">›</span>
+          <span class="bc-arrow">â€º</span>
           <div class="stage-pill" data-stage="tasks" id="pill-tasks">
             <span class="pill-num">3</span> Task list
           </div>
-          <span class="bc-arrow">›</span>
+          <span class="bc-arrow">â€º</span>
           <div class="stage-pill" data-stage="verify" id="pill-verify">
             <span class="pill-num">4</span> Verify
           </div>
@@ -1660,7 +1666,7 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
     <div id="content">
       <!-- Welcome -->
       <div id="welcome">
-        <div class="welcome-logo">📋</div>
+        <div class="welcome-logo">ðŸ“‹</div>
         <div class="welcome-title">Welcome to nSpec</div>
         <div class="welcome-sub">Create AI-powered specs with Requirements, Design, and Task plans in seconds.</div>
         <button type="button" class="btn-welcome" id="btn-welcome-new">Create your first spec</button>
@@ -1688,7 +1694,7 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
       <!-- Verify view -->
       <div class="stage-view" id="view-verify">
         <div id="verify-score-header" class="verify-header" style="display:none">
-          <span id="health-badge" class="health-badge health-good">— / 100</span>
+          <span id="health-badge" class="health-badge health-good">â€” / 100</span>
           <span style="font-size:12px;color:var(--text-muted)" id="health-verdict"></span>
         </div>
         <div class="md-area" id="area-verify"><div class="md-rendered" id="md-verify"></div><textarea class="edit-textarea" id="edit-verify"></textarea></div>
@@ -1697,19 +1703,19 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
 
     <!-- Inline refine bar (replaces bottom bar) -->
     <div class="refine-inline" id="refine-inline">
-      <input type="text" class="refine-input" id="refine-input" placeholder="Describe the change… (Enter to apply)">
+      <input type="text" class="refine-input" id="refine-input" placeholder="Describe the changeâ€¦ (Enter to apply)">
       <button class="btn-refine-send" id="btn-refine-send">Refine</button>
-      <button class="btn-refine-close" id="btn-refine-close" title="Close">✕</button>
+      <button class="btn-refine-close" id="btn-refine-close" title="Close">âœ•</button>
     </div>
 
   </div>
 </div>
 
-<!-- ── New Spec Wizard (D1: Guided creation) ──────────── -->
+<!-- â”€â”€ New Spec Wizard (D1: Guided creation) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="modal-overlay hidden" id="modal-new">
   <div class="modal wizard-modal">
 
-    <!-- ── Step 1: Describe (type + name + description) ── -->
+    <!-- â”€â”€ Step 1: Describe (type + name + description) â”€â”€ -->
     <div class="wizard-pane active" id="wizard-pane-1">
       <div class="modal-title">New Spec</div>
       <div class="modal-field">
@@ -1731,34 +1737,34 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
         <input class="modal-input" id="new-spec-name" type="text" placeholder="e.g. User Authentication, M2 Gatekeeper Attack">
       </div>
       <div class="modal-field" id="jira-field">
-        <label class="modal-label" for="new-spec-jira">Jira URL <span style="font-weight:400;color:var(--text-muted)">(optional — auto-selects Feature type)</span></label>
+        <label class="modal-label" for="new-spec-jira">Jira URL <span style="font-weight:400;color:var(--text-muted)">(optional â€” auto-selects Feature type)</span></label>
         <input class="modal-input" id="new-spec-jira" type="url" placeholder="https://your-domain.atlassian.net/browse/PROJ-123">
       </div>
       <div class="modal-field">
         <label class="modal-label" for="new-spec-prompt" id="prompt-label">Description</label>
-        <textarea class="modal-input" id="new-spec-prompt" rows="4" placeholder="Describe the feature, its purpose, key behaviors, and any constraints…"></textarea>
+        <textarea class="modal-input" id="new-spec-prompt" rows="4" placeholder="Describe the feature, its purpose, key behaviors, and any constraintsâ€¦"></textarea>
       </div>
       <div class="modal-field" id="template-field">
         <label class="modal-label" for="new-spec-template">Template <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
         <select class="modal-input" id="new-spec-template" style="padding:7px 11px">
-          <option value="">No template — start blank</option>
-          <option value="rest-api">REST API — CRUD endpoints, auth, validation</option>
-          <option value="game-feature">Game Feature — Player-facing feature</option>
-          <option value="ml-experiment">ML Experiment — Model training / evaluation</option>
-          <option value="cli-tool">CLI Tool — Command-line application</option>
-          <option value="library-sdk">Library / SDK — Reusable package</option>
+          <option value="">No template â€” start blank</option>
+          <option value="rest-api">REST API â€” CRUD endpoints, auth, validation</option>
+          <option value="game-feature">Game Feature â€” Player-facing feature</option>
+          <option value="ml-experiment">ML Experiment â€” Model training / evaluation</option>
+          <option value="cli-tool">CLI Tool â€” Command-line application</option>
+          <option value="library-sdk">Library / SDK â€” Reusable package</option>
         </select>
       </div>
       <div class="modal-actions">
         <button class="btn-modal-cancel" id="btn-new-cancel">Cancel</button>
-        <button class="btn-modal-ok" id="btn-wiz-next-1">Generate →</button>
+        <button class="btn-modal-ok" id="btn-wiz-next-1">Generate â†’</button>
       </div>
     </div>
 
   </div>
 </div>
 
-<!-- ── Confirm delete modal ───────────────────────────── -->
+<!-- â”€â”€ Confirm delete modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="modal-overlay hidden" id="modal-delete">
   <div class="modal">
     <div class="modal-title">Delete spec?</div>
@@ -1775,1039 +1781,7 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
 
 <script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
 <script nonce="${nonce}" src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
-<script nonce="${nonce}">
-// ── Globals ─────────────────────────────────────────────────────────────────
-const vscode = acquireVsCodeApi();
-let state = {
-  specs: [],
-  activeSpec: null,
-  activeStage: 'requirements',
-  contents: {},
-  generating: false,
-  models: [],
-  selectedModelId: null,
-  selectedModelName: null,
-  progress: null,
-  hasCustomPrompts: false,
-  editMode: false,
-  requirementsFormat: 'given-when-then',
-};
-let streamBuffer = { requirements: '', design: '', tasks: '', verify: '' };
-let pendingDelete = null;
-const STAGES = ['requirements', 'design', 'tasks', 'verify'];
-
-// ── Marked setup ────────────────────────────────────────────────────────────
-if (typeof marked !== 'undefined') {
-  marked.setOptions({
-    gfm: true,
-    breaks: false,
-    highlight: (code, lang) => {
-      if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
-        return hljs.highlight(code, { language: lang }).value;
-      }
-      if (typeof hljs !== 'undefined') return hljs.highlightAuto(code).value;
-      return code;
-    }
-  });
-}
-
-// ── VSCode message handling ─────────────────────────────────────────────────
-window.addEventListener('message', e => {
-  const msg = e.data;
-  switch (msg.type) {
-    case 'init':         handleInit(msg); break;
-    case 'triggerNewSpec': openNewModal(); break;
-    case 'specCreated':  handleSpecCreated(msg); break;
-    case 'specOpened':   handleSpecOpened(msg); break;
-    case 'specDeleted':  handleSpecDeleted(msg.specName); break;
-    case 'streamStart':  handleStreamStart(msg); break;
-    case 'streamChunk':  handleStreamChunk(msg); break;
-    case 'streamDone':   handleStreamDone(msg); break;
-    case 'inquiryDone':  handleInquiryDone(msg); break;
-    case 'chatEntry':    break; // No longer rendered in panel (use Copilot chat instead)
-    case 'taskOutput':   break; // Output goes to VS Code output channel
-    case 'saved':        showToast('Saved ✓'); break;
-    case 'error':        showError(msg.message); break;
-    case 'modelChanged': handleModelChanged(msg); break;
-    case 'modelsLoaded': handleModelsLoaded(msg); break;
-    case 'progressUpdated': handleProgressUpdated(msg.progress); break;
-    case 'usingCustomPrompt': showToast(\`Using custom prompt for \${msg.stage}\`); break;
-    case 'promptsScaffolded': state.hasCustomPrompts = true; updateBreadcrumb(); break;
-    case 'specRenamed': handleSpecRenamed(msg); break;
-    case 'requirementsFormatChanged': state.requirementsFormat = msg.format || 'given-when-then'; showToast(msg.format === 'ears' ? 'Requirements format: EARS' : 'Requirements format: Given/When/Then'); break;
-  }
-});
-
-// ── Init ────────────────────────────────────────────────────────────────────
-function handleInit(msg) {
-  state.specs = msg.specs || [];
-  state.models = msg.models || [];
-  state.selectedModelId = msg.selectedModelId || null;
-  state.activeSpec = msg.activeSpec;
-  state.activeStage = msg.activeStage || 'requirements';
-  state.contents = msg.contents || {};
-  state.requirementsFormat = msg.requirementsFormat || 'given-when-then';
-
-  // Resolve selected model name
-  const found = state.models.find(m => m.id === state.selectedModelId);
-  state.selectedModelName = found?.name || (state.models[0]?.name ?? null);
-  if (!state.selectedModelId && state.models[0]) {
-    state.selectedModelId = state.models[0].id;
-  }
-
-  renderSidebar();
-  renderModelChip();
-  if (state.activeSpec) {
-    renderAllStages();
-    setActiveStage(state.activeStage);
-    showMainContent();
-  } else {
-    showWelcome();
-  }
-}
-
-function handleModelChanged(msg) {
-  state.selectedModelId = msg.modelId;
-  state.selectedModelName = msg.modelName;
-  renderModelChip();
-}
-
-function handleModelsLoaded(msg) {
-  state.models = msg.models || [];
-  state.selectedModelId = msg.selectedModelId || state.selectedModelId;
-  const found = state.models.find(m => m.id === state.selectedModelId);
-  state.selectedModelName = found?.name || state.models[0]?.name || null;
-  if (!state.selectedModelId && state.models[0]) state.selectedModelId = state.models[0].id;
-  renderModelChip();
-}
-
-function renderModelChip() {
-  // Inject model chip into topbar if it doesn't already exist
-  let chip = document.getElementById('model-chip');
-  const actions = document.getElementById('topbar-actions');
-  if (!actions) return;
-
-  if (!chip) {
-    chip = document.createElement('div');
-    chip.id = 'model-chip';
-    chip.className = 'model-chip';
-    chip.title = 'Click to change model';
-    chip.addEventListener('click', openModelPicker);
-    // Insert before other actions
-    actions.parentElement.insertBefore(chip, actions);
-  }
-
-  if (state.selectedModelName) {
-    chip.className = 'model-chip';
-    chip.innerHTML = \`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
-    <span class="model-chip-name">\${esc(state.selectedModelName)}</span>
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>\`;
-  } else {
-    chip.className = 'model-chip model-chip-none';
-    chip.innerHTML = \`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-    <span class="model-chip-name">\${state.models.length === 0 ? 'No model — Open settings' : 'No model — click to select'}</span>\`;
-  }
-  const noModelCard = document.getElementById('no-model-card');
-  const btnOpenSettings = document.getElementById('btn-open-settings');
-  if (noModelCard) noModelCard.style.display = state.models.length === 0 ? 'block' : 'none';
-  if (btnOpenSettings) {
-    btnOpenSettings.onclick = () => { vscode.postMessage({ command: 'openSettings' }); };
-  }
-}
-
-function openModelPicker() {
-  if (state.models.length === 0) {
-    vscode.postMessage({ command: 'openSettings' });
-    return;
-  }
-
-  // Build inline dropdown
-  const existing = document.getElementById('model-dropdown');
-  if (existing) { existing.remove(); return; }
-
-  const chip = document.getElementById('model-chip');
-  const rect = chip.getBoundingClientRect();
-
-  const dropdown = document.createElement('div');
-  dropdown.id = 'model-dropdown';
-  dropdown.style.cssText = \`position:fixed;top:\${rect.bottom+4}px;left:\${rect.left}px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:200;min-width:260px;overflow:hidden\`;
-
-  dropdown.innerHTML = \`
-    <div style="padding:8px 12px 6px;font-size:11px;color:var(--text-muted);font-weight:500;border-bottom:1px solid var(--border)">SELECT MODEL</div>
-    \${state.models.map(m => \`
-      <div class="model-option \${m.id === state.selectedModelId ? 'selected' : ''}" data-id="\${esc(m.id)}" data-name="\${esc(m.name)}"
-        style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;transition:background .1s">
-        <div>
-          <div style="color:var(--text)">\${esc(m.name)}</div>
-          <div style="font-size:11px;color:var(--text-muted)">\${esc(m.vendor)} · \${esc(m.family)}</div>
-        </div>
-        \${m.id === state.selectedModelId ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
-      </div>
-    \`).join('')}
-  \`;
-
-  dropdown.querySelectorAll('.model-option').forEach(opt => {
-    opt.addEventListener('mouseover', () => opt.style.background = 'var(--surface2)');
-    opt.addEventListener('mouseout', () => opt.style.background = '');
-    opt.addEventListener('click', () => {
-      const id = opt.dataset.id;
-      vscode.postMessage({ command: 'selectModel', modelId: id });
-      dropdown.remove();
-    });
-  });
-
-  document.body.appendChild(dropdown);
-  setTimeout(() => document.addEventListener('click', function handler(e) {
-    if (!dropdown.contains(e.target)) { dropdown.remove(); document.removeEventListener('click', handler); }
-  }), 10);
-}
-
-// ── Spec events ─────────────────────────────────────────────────────────────
-function handleSpecCreated(msg) {
-  state.activeSpec = msg.specName;
-  state.activeStage = 'requirements';
-  state.contents = {};
-  state.progress = null;
-  state.hasCustomPrompts = msg.hasCustomPrompts || false;
-  streamBuffer = { requirements: '', design: '', tasks: '', verify: '' };
-  addOrUpdateSpecInList({ name: msg.specName, hasRequirements: false, hasDesign: false, hasTasks: false, hasVerify: false, progress: null });
-  renderSidebar();
-  showMainContent();
-  setActiveStage('requirements');
-  updateBreadcrumb();
-}
-
-function handleSpecOpened(msg) {
-  state.activeSpec = msg.specName;
-  state.activeStage = msg.activeStage;
-  state.contents = msg.contents || {};
-  state.progress = msg.progress || null;
-  state.hasCustomPrompts = msg.hasCustomPrompts || false;
-  state.requirementsFormat = msg.requirementsFormat || 'given-when-then';
-  streamBuffer = { requirements: '', design: '', tasks: '', verify: '' };
-  renderAllStages();
-  showMainContent();
-  setActiveStage(state.activeStage);
-  renderSidebar();
-  updateBreadcrumb();
-  if (state.progress && state.activeStage === 'tasks') renderProgress(state.progress);
-}
-
-function handleProgressUpdated(progress) {
-  state.progress = progress;
-  renderProgress(progress);
-  // Update sidebar dot for this spec
-  const spec = state.specs.find(s => s.name === state.activeSpec);
-  if (spec) { spec.progress = progress; renderSidebar(); }
-}
-
-function handleSpecDeleted(specName) {
-  state.specs = state.specs.filter(s => s.name !== specName);
-  if (state.activeSpec === specName) {
-    state.activeSpec = null;
-    state.contents = {};
-    showWelcome();
-  }
-  renderSidebar();
-}
-
-// ── Stream ───────────────────────────────────────────────────────────────────
-let isRefineStream = false;
-function handleStreamStart(msg) {
-  state.generating = true;
-  isRefineStream = !!msg.isRefine;
-  streamBuffer[msg.stage] = '';
-  const el = document.getElementById('md-' + msg.stage);
-  if (el) { el.innerHTML = ''; el.classList.add('stream-cursor'); }
-  setActiveStage(msg.stage);
-  updateTopbarActions();
-}
-
-function handleStreamChunk(msg) {
-  streamBuffer[msg.stage] += msg.chunk;
-  const el = document.getElementById('md-' + msg.stage);
-  if (el) el.innerHTML = renderMarkdown(streamBuffer[msg.stage]);
-  // Auto-scroll
-  const area = el?.closest('.md-area');
-  if (area) area.scrollTop = area.scrollHeight;
-}
-
-function handleInquiryDone(msg) {
-  state.generating = false;
-  streamBuffer[msg.stage] = '';
-  // Restore the original document content (streamStart cleared it)
-  const el = document.getElementById('md-' + msg.stage);
-  if (el) {
-    el.classList.remove('stream-cursor');
-    const original = state.contents[msg.stage] || '';
-    if (msg.stage === 'tasks') {
-      el.innerHTML = renderInteractiveTasks(original);
-      wireTaskCheckboxes();
-    } else {
-      el.innerHTML = renderMarkdown(original);
-    }
-  }
-  showToast('AI response received');
-  updateTopbarActions();
-}
-
-function handleStreamDone(msg) {
-  state.generating = false;
-  state.contents[msg.stage] = msg.content;
-  streamBuffer[msg.stage] = '';
-  const el = document.getElementById('md-' + msg.stage);
-  if (el) {
-    el.classList.remove('stream-cursor');
-    if (msg.stage === 'tasks') {
-      el.innerHTML = renderInteractiveTasks(msg.content);
-      wireTaskCheckboxes();
-    } else {
-      el.innerHTML = renderMarkdown(msg.content);
-    }
-    if (msg.stage === 'verify') renderHealthScore(msg.content);
-  }
-  if (isRefineStream) {
-    showToast('Document refined');
-    isRefineStream = false;
-  }
-  setActiveStage(msg.stage);
-  updateSpecStages(state.activeSpec, msg.stage);
-  renderSidebar();
-  updateTopbarActions();
-}
-
-// ── Render helpers ────────────────────────────────────────────────────────────
-function renderMarkdown(md) {
-  if (typeof marked === 'undefined') return md || '';
-  return marked.parse(md || '');
-}
-
-function renderAllStages() {
-  ['requirements', 'design'].forEach(stage => {
-    const el = document.getElementById('md-' + stage);
-    if (el) el.innerHTML = renderMarkdown(state.contents[stage] || '');
-  });
-  const tasksEl = document.getElementById('md-tasks');
-  if (tasksEl) {
-    if (state.contents.tasks) {
-      tasksEl.innerHTML = renderInteractiveTasks(state.contents.tasks);
-      wireTaskCheckboxes();
-    } else {
-      tasksEl.innerHTML = '';
-    }
-  }
-  if (state.progress) renderProgress(state.progress);
-
-  const verifyEl = document.getElementById('md-verify');
-  if (verifyEl) {
-    verifyEl.innerHTML = renderMarkdown(state.contents.verify || '');
-    if (state.contents.verify) renderHealthScore(state.contents.verify);
-  }
-}
-
-function renderSidebar() {
-  const list = document.getElementById('specs-list');
-  const countEl = document.getElementById('specs-count');
-  if (!list) return;
-  const filtered = searchFilter
-    ? state.specs.filter(s => s.name.toLowerCase().includes(searchFilter))
-    : state.specs;
-  if (countEl) countEl.textContent = \`\${filtered.length} spec\${filtered.length !== 1 ? 's' : ''}\`;
-  if (filtered.length === 0) {
-    list.innerHTML = '<div style="padding:16px 8px;color:var(--text-muted);font-size:12px;text-align:center">' +
-      (state.specs.length === 0 ? 'No specs yet' : 'No matching specs') + '</div>';
-    return;
-  }
-  list.innerHTML = filtered.map(spec => {
-    const active = spec.name === state.activeSpec;
-    const pct = spec.progress && spec.progress.total > 0
-      ? Math.round((spec.progress.done / spec.progress.total) * 100) : 0;
-    const showProgress = spec.hasTasks && spec.progress;
-    return \`<div class="spec-item \${active ? 'active' : ''}" data-name="\${esc(spec.name)}">
-      <div style="flex:1;min-width:0">
-        <span class="spec-item-name">\${esc(spec.name)}</span>
-        \${showProgress ? \`<div class="progress-bar-wrap" style="margin-top:3px"><div class="progress-bar-fill" style="width:\${pct}%"></div></div>\` : ''}
-      </div>
-      <span class="spec-item-dots">
-        <span class="stage-dot \${spec.hasRequirements ? 'done' : ''}" title="Requirements"></span>
-        <span class="stage-dot \${spec.hasDesign ? 'done' : ''}" title="Design"></span>
-        <span class="stage-dot \${spec.hasTasks ? 'done' : ''}" title="Tasks"></span>
-        <span class="stage-dot \${spec.hasVerify ? 'verify' : ''}" title="Verify"></span>
-      </span>
-      <button class="spec-item-del" data-del="\${esc(spec.name)}" title="Delete spec">✕</button>
-    </div>\`;
-  }).join('');
-
-  list.querySelectorAll('.spec-item').forEach(el => {
-    el.addEventListener('click', (e) => {
-      if (e.target.dataset.del || e.target.classList.contains('rename-input')) return;
-      const name = el.dataset.name;
-      if (name && name !== state.activeSpec) {
-        vscode.postMessage({ command: 'openSpec', specName: name });
-      }
-    });
-    // Double-click to rename (Deliverable G)
-    el.querySelector('.spec-item-name')?.addEventListener('dblclick', (e) => {
-      e.stopPropagation();
-      const nameSpan = e.target;
-      const oldName = el.dataset.name;
-      const input = document.createElement('input');
-      input.className = 'rename-input';
-      input.value = oldName;
-      nameSpan.replaceWith(input);
-      input.focus();
-      input.select();
-      const finish = () => {
-        const newName = input.value.trim();
-        if (newName && newName !== oldName) {
-          vscode.postMessage({ command: 'renameSpec', oldName, newName });
-        } else {
-          renderSidebar();
-        }
-      };
-      input.addEventListener('blur', finish);
-      input.addEventListener('keydown', ev => {
-        if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
-        if (ev.key === 'Escape') { input.value = oldName; input.blur(); }
-      });
-    });
-  });
-  list.querySelectorAll('[data-del]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openDeleteModal(btn.dataset.del);
-    });
-  });
-}
-
-function renderProgress(progress) {
-  if (!progress) return;
-  const header = document.getElementById('tasks-progress-header');
-  const bar = document.getElementById('progress-bar');
-  const label = document.getElementById('progress-label');
-  const pct = document.getElementById('progress-pct');
-  if (!header || !bar || !label || !pct) return;
-  const percent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
-  header.style.display = 'block';
-  bar.style.width = percent + '%';
-  label.textContent = \`\${progress.done} / \${progress.total} tasks complete\`;
-  pct.textContent = percent + '%';
-}
-
-function renderHealthScore(verifyContent) {
-  const header = document.getElementById('verify-score-header');
-  const badge = document.getElementById('health-badge');
-  const verdict = document.getElementById('health-verdict');
-  if (!header || !badge || !verdict) return;
-
-  // Parse "## Spec Health Score: 84" or "## Spec Health Score: 84/100"
-  const match = verifyContent.match(/Spec Health Score[:\\s]+(\\d+)/i);
-  if (!match) return;
-
-  const score = parseInt(match[1], 10);
-  let cls = 'health-poor', emoji = '🔴';
-  if (score >= 90) { cls = 'health-excellent'; emoji = '✅'; }
-  else if (score >= 70) { cls = 'health-good'; emoji = '⚠️'; }
-  else if (score >= 50) { cls = 'health-fair'; emoji = '🟡'; }
-
-  // Extract verdict line (first sentence after the score heading)
-  const verdictMatch = verifyContent.match(/Spec Health Score[^\\n]*\\n+([^\\n]{10,120})/i);
-  const verdictText = verdictMatch ? verdictMatch[1].replace(/^#+\\s*/, '').trim() : '';
-
-  header.style.display = 'flex';
-  badge.className = \`health-badge \${cls}\`;
-  badge.textContent = \`\${emoji} \${score} / 100\`;
-  verdict.textContent = verdictText;
-}
-
-function renderInteractiveTasks(markdown) {
-  // Convert markdown but make checkboxes interactive with data-task-id
-  const lines = markdown.split('\\n');
-  let taskIndex = 0;
-  const processedLines = lines.map(line => {
-    const m = /^(\\s*)-\\s+\\[([ xX])\\]\\s+(.+?)(\\s+\\([SMLX]+\\))?$/.exec(line);
-    if (!m) return line;
-    const label = m[3].trim();
-    const indent = m[1].length;
-    const checked = m[2].toLowerCase() === 'x';
-    const size = m[4] || '';
-    // Generate same stableId logic as backend
-    const id = \`\${label.slice(0,32).replace(/\\s+/g,'_').toLowerCase()}_\${taskIndex++}\`;
-
-    // Use persisted state if available
-    const isChecked = state.progress?.items[id] ?? checked;
-    const checkedStr = isChecked ? 'x' : ' ';
-    return \`\${m[1]}- [\${checkedStr}] \${m[3]}\${size} <span style="display:none" data-task-id="\${esc(id)}"></span>\`;
-  });
-  return renderMarkdown(processedLines.join('\\n'));
-}
-
-function wireTaskCheckboxes() {
-  const el = document.getElementById('md-tasks');
-  if (!el) return;
-  el.querySelectorAll('input[type=checkbox]').forEach((cb, i) => {
-    cb.addEventListener('change', () => {
-      // Find the hidden span with data-task-id nearby
-      const li = cb.closest('li');
-      const idSpan = li?.querySelector('[data-task-id]');
-      if (idSpan) {
-        vscode.postMessage({ command: 'toggleTask', taskId: idSpan.dataset.taskId });
-      }
-      // Optimistic UI
-      cb.closest('li')?.classList.toggle('done', cb.checked);
-    });
-  });
-}
-
-function updateTopbarActions() {
-  const container = document.getElementById('topbar-actions');
-  if (!container || !state.activeSpec) { if(container) container.innerHTML=''; return; }
-  const stage = state.activeStage;
-  const hasContent = !!state.contents[stage];
-  const hasReq = !!state.contents.requirements;
-  const hasDes = !!state.contents.design;
-  const hasTasks = !!state.contents.tasks;
-  const hasVerify = !!state.contents.verify;
-  const gen = state.generating;
-  let html = '';
-
-  if (gen) {
-    html = \`<div style="display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:12px">
-      <div class="spinner accent"></div>Generating…
-      <button class="btn-action" style="margin-left:4px" id="btn-cancel">Cancel</button>
-    </div>\`;
-    container.innerHTML = html;
-    container.querySelector('#btn-cancel')?.addEventListener('click', () => vscode.postMessage({ command: 'cancelGeneration' }));
-    return;
-  }
-
-  // Preview/Edit toggle (Deliverable A)
-  if (hasContent) {
-    const editIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
-    const previewIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-    html += \`<button class="btn-action" id="btn-toggle-edit">\${state.editMode ? previewIcon + ' Preview' : editIcon + ' Edit'}</button>\`;
-  }
-
-  // Refine button (Deliverable B)
-  if (hasContent) {
-    html += \`<button class="btn-action" id="btn-refine-open">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-      Refine
-    </button>\`;
-  }
-
-  // Import from file (D5)
-  html += \`<button class="btn-action" id="btn-import-file" title="Import from file or transform with AI">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-    Import
-  </button>\`;
-
-  // Cascade dropdown (Deliverable E)
-  if (stage !== 'verify') {
-    html += \`<button class="btn-action" id="btn-cascade-open">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      Cascade
-    </button>\`;
-  }
-
-  // Requirements format (EARS vs Given/When/Then) — only when on requirements stage
-  if (stage === 'requirements') {
-    html += \`<select class="btn-action" id="req-format-select" style="padding:4px 8px;font-size:11px;max-width:140px" title="Requirements format for next generation">
-      <option value="given-when-then">Given/When/Then</option>
-      <option value="ears">EARS</option>
-    </select>\`;
-  }
-
-  // Next-stage generate buttons
-  if (stage === 'requirements' && hasReq) {
-    html += \`<button class="btn-action primary" id="btn-gen-design">Generate Design →</button>\`;
-  }
-  if (stage === 'design') {
-    if (!hasDes && hasReq) html += \`<button class="btn-action primary" id="btn-gen-design">Generate Design</button>\`;
-    if (hasDes) html += \`<button class="btn-action primary" id="btn-gen-tasks">Generate Tasks →</button>\`;
-  }
-  if (stage === 'tasks') {
-    if (!hasTasks && hasDes) html += \`<button class="btn-action primary" id="btn-gen-tasks">Generate Tasks</button>\`;
-    if (hasTasks) {
-      html += \`<button class="btn-action run" id="btn-run-tasks">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        Run all
-      </button>\`;
-      html += \`<button class="btn-action primary" id="btn-gen-verify" style="background:var(--yellow);border-color:var(--yellow);color:#1e1e2e">Verify →</button>\`;
-    }
-  }
-  if (stage === 'verify') {
-    if (!hasVerify && hasTasks) html += \`<button class="btn-action primary" id="btn-gen-verify">Run Verification</button>\`;
-    if (hasVerify) html += \`<button class="btn-action" id="btn-gen-verify">Re-verify</button>\`;
-  }
-
-  container.innerHTML = html;
-
-  // Wire up buttons
-  container.querySelector('#btn-toggle-edit')?.addEventListener('click', toggleEditMode);
-  container.querySelector('#btn-refine-open')?.addEventListener('click', openRefineInline);
-  container.querySelector('#btn-import-file')?.addEventListener('click', () => vscode.postMessage({ command: 'importFromFile' }));
-  const reqFormatSelect = container.querySelector('#req-format-select');
-  if (reqFormatSelect) {
-    reqFormatSelect.value = state.requirementsFormat || 'given-when-then';
-    reqFormatSelect.addEventListener('change', (e) => {
-      const v = (e.target && 'value' in e.target) ? (e.target.value) : 'given-when-then';
-      vscode.postMessage({ command: 'setRequirementsFormat', format: v });
-    });
-  }
-  container.querySelector('#btn-cascade-open')?.addEventListener('click', openCascadeDropdown);
-  container.querySelector('#btn-gen-design')?.addEventListener('click', () => vscode.postMessage({ command: 'generateDesign' }));
-  container.querySelector('#btn-gen-tasks')?.addEventListener('click', () => vscode.postMessage({ command: 'generateTasks' }));
-  container.querySelector('#btn-run-tasks')?.addEventListener('click', () => vscode.postMessage({ command: 'runAllTasks' }));
-  container.querySelector('#btn-gen-verify')?.addEventListener('click', () => {
-    setActiveStage('verify');
-    vscode.postMessage({ command: 'generateVerify' });
-  });
-}
-
-function updateBreadcrumb() {
-  const el = document.getElementById('bc-spec');
-  if (el) {
-    el.innerHTML = esc(state.activeSpec || '—') +
-      (state.hasCustomPrompts ? '<span class="custom-prompts-dot" title="Custom prompts active"></span>' : '');
-  }
-  STAGES.forEach(s => {
-    const pill = document.getElementById('pill-' + s);
-    if (!pill) return;
-    pill.classList.remove('active', 'done');
-    if (s === state.activeStage) pill.classList.add('active');
-    else if (state.contents[s]) pill.classList.add('done');
-  });
-}
-
-function setActiveStage(stage) {
-  // Exit edit mode when switching stages
-  if (state.editMode) exitEditMode();
-  closeRefineInline();
-  state.activeStage = stage;
-  STAGES.forEach(s => {
-    document.getElementById('view-' + s)?.classList.toggle('visible', s === stage);
-  });
-  updateBreadcrumb();
-  updateTopbarActions();
-  vscode.postMessage({ command: 'setStage', stage });
-  // Update refine placeholder
-  const ri = document.getElementById('refine-input');
-  if (ri) ri.placeholder = \`Describe the change to \${stage}… (Enter to apply)\`;
-  // Persist state
-  saveWebviewState();
-}
-
-function updateSpecStages(specName, completedStage) {
-  const spec = state.specs.find(s => s.name === specName);
-  if (!spec) return;
-  if (completedStage === 'requirements') spec.hasRequirements = true;
-  if (completedStage === 'design') spec.hasDesign = true;
-  if (completedStage === 'tasks') spec.hasTasks = true;
-  if (completedStage === 'verify') spec.hasVerify = true;
-}
-
-function addOrUpdateSpecInList(spec) {
-  const idx = state.specs.findIndex(s => s.name === spec.name);
-  if (idx >= 0) state.specs[idx] = { ...state.specs[idx], ...spec };
-  else state.specs.unshift(spec);
-}
-
-function showWelcome() {
-  document.getElementById('welcome')?.classList.remove('hidden');
-  STAGES.forEach(s => document.getElementById('view-' + s)?.classList.remove('visible'));
-  document.getElementById('bc-spec').textContent = '—';
-  document.getElementById('topbar-actions').innerHTML = '';
-}
-
-function showMainContent() {
-  document.getElementById('welcome')?.classList.add('hidden');
-}
-
-let toastTimer = null;
-function showToast(msg) {
-  const el = document.getElementById('toast');
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.add('visible');
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('visible'), 3000);
-}
-
-function showError(msg) {
-  state.generating = false;
-  STAGES.forEach(s => document.getElementById('md-' + s)?.classList.remove('stream-cursor'));
-  showToast('Error: ' + msg);
-  updateTopbarActions();
-  console.error('nSpec:', msg);
-}
-
-function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-
-// ── Edit mode (Deliverable A) ─────────────────────────────────────────────────
-function toggleEditMode() {
-  if (state.editMode) exitEditMode();
-  else enterEditMode();
-}
-
-function enterEditMode() {
-  const stage = state.activeStage;
-  const area = document.getElementById('area-' + stage);
-  const textarea = document.getElementById('edit-' + stage);
-  if (!area || !textarea) return;
-  textarea.value = state.contents[stage] || '';
-  area.classList.add('editing');
-  state.editMode = true;
-  textarea.style.height = 'auto';
-  textarea.style.height = Math.max(textarea.scrollHeight, 200) + 'px';
-  textarea.focus();
-  updateTopbarActions();
-}
-
-function exitEditMode() {
-  const stage = state.activeStage;
-  const area = document.getElementById('area-' + stage);
-  const textarea = document.getElementById('edit-' + stage);
-  if (!area || !textarea) return;
-  // Save content
-  const newContent = textarea.value;
-  if (newContent !== state.contents[stage]) {
-    state.contents[stage] = newContent;
-    vscode.postMessage({ command: 'saveContent', stage, content: newContent });
-    // Re-render preview
-    const mdEl = document.getElementById('md-' + stage);
-    if (mdEl) {
-      if (stage === 'tasks') {
-        mdEl.innerHTML = renderInteractiveTasks(newContent);
-        wireTaskCheckboxes();
-      } else {
-        mdEl.innerHTML = renderMarkdown(newContent);
-      }
-      if (stage === 'verify') renderHealthScore(newContent);
-    }
-  }
-  area.classList.remove('editing');
-  state.editMode = false;
-  updateTopbarActions();
-}
-
-function saveEditWithoutExiting() {
-  const stage = state.activeStage;
-  const textarea = document.getElementById('edit-' + stage);
-  if (!textarea || !state.editMode) return;
-  const newContent = textarea.value;
-  state.contents[stage] = newContent;
-  vscode.postMessage({ command: 'saveContent', stage, content: newContent });
-  showToast('Saved');
-}
-
-// ── Inline refine (Deliverable B) ─────────────────────────────────────────────
-function openRefineInline() {
-  const bar = document.getElementById('refine-inline');
-  const input = document.getElementById('refine-input');
-  if (!bar) return;
-  bar.classList.add('visible');
-  if (input) {
-    input.placeholder = \`Describe the change to \${state.activeStage}… (Enter to apply)\`;
-    input.focus();
-  }
-}
-
-function closeRefineInline() {
-  const bar = document.getElementById('refine-inline');
-  if (bar) bar.classList.remove('visible');
-}
-
-function sendRefine() {
-  const input = document.getElementById('refine-input');
-  const val = input?.value?.trim();
-  if (!val || state.generating || !state.activeSpec) return;
-  vscode.postMessage({ command: 'refine', stage: state.activeStage, feedback: val });
-  input.value = '';
-  closeRefineInline();
-}
-
-document.getElementById('btn-refine-send')?.addEventListener('click', sendRefine);
-document.getElementById('btn-refine-close')?.addEventListener('click', closeRefineInline);
-document.getElementById('refine-input')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); sendRefine(); }
-  if (e.key === 'Escape') closeRefineInline();
-});
-
-// ── Cascade dropdown (Deliverable E) ──────────────────────────────────────────
-function openCascadeDropdown() {
-  const existing = document.getElementById('cascade-dd');
-  if (existing) { existing.remove(); return; }
-
-  const btn = document.getElementById('btn-cascade-open');
-  if (!btn) return;
-  const rect = btn.getBoundingClientRect();
-
-  const dd = document.createElement('div');
-  dd.id = 'cascade-dd';
-  dd.className = 'cascade-dropdown';
-  dd.style.cssText = \`top:\${rect.bottom+4}px;right:\${window.innerWidth - rect.right}px\`;
-
-  const stage = state.activeStage;
-  let items = '';
-  items += \`<div class="cascade-dropdown-item" data-action="from-current">
-    <div>From \${stage} → verify</div>
-    <div class="cd-desc">Generate all downstream stages</div>
-  </div>\`;
-  items += \`<div class="cascade-dropdown-item" data-action="regen-current">
-    <div>Regenerate \${stage}</div>
-    <div class="cd-desc">Regenerate the current stage</div>
-  </div>\`;
-  items += \`<div class="cascade-dropdown-item" data-action="full-pipeline">
-    <div>Full pipeline</div>
-    <div class="cd-desc">Regenerate all stages from requirements</div>
-  </div>\`;
-  dd.innerHTML = items;
-
-  dd.querySelectorAll('.cascade-dropdown-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const action = item.dataset.action;
-      dd.remove();
-      if (action === 'from-current') {
-        vscode.postMessage({ command: 'cascadeFromStage', fromStage: stage });
-      } else if (action === 'regen-current') {
-        if (stage === 'requirements') vscode.postMessage({ command: 'generateRequirements' });
-        else if (stage === 'design') vscode.postMessage({ command: 'generateDesign' });
-        else if (stage === 'tasks') vscode.postMessage({ command: 'generateTasks' });
-        else if (stage === 'verify') vscode.postMessage({ command: 'generateVerify' });
-      } else if (action === 'full-pipeline') {
-        vscode.postMessage({ command: 'cascadeFromStage', fromStage: 'design' });
-      }
-    });
-  });
-
-  document.body.appendChild(dd);
-  setTimeout(() => document.addEventListener('click', function handler(e) {
-    if (!dd.contains(e.target)) { dd.remove(); document.removeEventListener('click', handler); }
-  }), 10);
-}
-
-// ── Spec rename (Deliverable G) ───────────────────────────────────────────────
-function handleSpecRenamed(msg) {
-  if (state.activeSpec === msg.oldName) state.activeSpec = msg.newName;
-  const spec = state.specs.find(s => s.name === msg.oldName);
-  if (spec) spec.name = msg.newName;
-  renderSidebar();
-  updateBreadcrumb();
-  showToast('Spec renamed');
-}
-
-// ── Sidebar search (Deliverable G) ────────────────────────────────────────────
-let searchFilter = '';
-document.getElementById('sidebar-search')?.addEventListener('input', e => {
-  searchFilter = e.target.value.toLowerCase();
-  renderSidebar();
-});
-
-// ── State persistence (Deliverable G) ─────────────────────────────────────────
-function saveWebviewState() {
-  vscode.setState({ activeSpec: state.activeSpec, activeStage: state.activeStage });
-}
-
-function restoreWebviewState() {
-  const saved = vscode.getState();
-  if (saved) {
-    if (saved.activeSpec) state.activeSpec = saved.activeSpec;
-    if (saved.activeStage) state.activeStage = saved.activeStage;
-  }
-}
-
-// ── Keyboard shortcuts (Deliverable F) ────────────────────────────────────────
-document.addEventListener('keydown', e => {
-  const ctrl = e.ctrlKey || e.metaKey;
-  if (!state.activeSpec) return;
-
-  // Ctrl+1/2/3/4 switch stages
-  if (ctrl && e.key >= '1' && e.key <= '4') {
-    e.preventDefault();
-    setActiveStage(STAGES[parseInt(e.key) - 1]);
-    return;
-  }
-  // Ctrl+E toggle edit
-  if (ctrl && e.key === 'e') {
-    e.preventDefault();
-    toggleEditMode();
-    return;
-  }
-  // Ctrl+Enter generate next stage / cascade
-  if (ctrl && e.key === 'Enter') {
-    e.preventDefault();
-    const s = state.activeStage;
-    if (s === 'requirements' && state.contents.requirements) vscode.postMessage({ command: 'generateDesign' });
-    else if (s === 'design' && state.contents.design) vscode.postMessage({ command: 'generateTasks' });
-    else if (s === 'tasks' && state.contents.tasks) { setActiveStage('verify'); vscode.postMessage({ command: 'generateVerify' }); }
-    return;
-  }
-  // Ctrl+R focus refine
-  if (ctrl && e.key === 'r') {
-    e.preventDefault();
-    openRefineInline();
-    return;
-  }
-  // Ctrl+S save edits
-  if (ctrl && e.key === 's' && state.editMode) {
-    e.preventDefault();
-    saveEditWithoutExiting();
-    return;
-  }
-  // Escape close modal / exit edit mode / close refine
-  if (e.key === 'Escape') {
-    if (state.editMode) { exitEditMode(); return; }
-    const refineBar = document.getElementById('refine-inline');
-    if (refineBar?.classList.contains('visible')) { closeRefineInline(); return; }
-    document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
-  }
-});
-
-// ── Stage pills ───────────────────────────────────────────────────────────────
-document.querySelectorAll('.stage-pill').forEach(pill => {
-  pill.addEventListener('click', () => {
-    if (!state.activeSpec) return;
-    setActiveStage(pill.dataset.stage);
-  });
-});
-
-// ── New spec wizard (D1 + D2) ─────────────────────────────────────────────────
-// Delegate from #app so "New Spec" / "Create your first spec" work even if direct
-// listeners failed (script timing, DOM not ready, or Cursor/webview quirks).
-document.getElementById('app')?.addEventListener('click', (e) => {
-  const t = e.target && e.target.closest && e.target.closest('#btn-new-spec, #btn-welcome-new');
-  if (t) { e.preventDefault(); openNewModal(); }
-});
-
-function openNewModal() {
-  document.getElementById('modal-new')?.classList.remove('hidden');
-  updateStep1ForType();
-  document.getElementById('new-spec-name')?.focus();
-}
-
-function closeNewModal() {
-  document.getElementById('modal-new')?.classList.add('hidden');
-  const nameEl = document.getElementById('new-spec-name');
-  if (nameEl) nameEl.value = '';
-  const promptEl = document.getElementById('new-spec-prompt');
-  if (promptEl) promptEl.value = '';
-  const jiraEl = document.getElementById('new-spec-jira');
-  if (jiraEl && 'value' in jiraEl) jiraEl.value = '';
-  const tmplEl = document.getElementById('new-spec-template');
-  if (tmplEl) tmplEl.value = '';
-  const featRadio = document.querySelector('input[name="spec-type"][value="feature"]');
-  if (featRadio) featRadio.checked = true;
-}
-
-function getSelectedSpecType() {
-  return document.querySelector('input[name="spec-type"]:checked')?.value || 'feature';
-}
-
-function updateStep1ForType() {
-  const specType = getSelectedSpecType();
-  const label   = document.getElementById('prompt-label');
-  const area    = document.getElementById('new-spec-prompt');
-  const nextBtn = document.getElementById('btn-wiz-next-1');
-  const jiraField = document.getElementById('jira-field');
-  const tmplField = document.getElementById('template-field');
-
-  if (specType === 'bugfix') {
-    if (label)   label.textContent = 'Bug report';
-    if (area)    area.placeholder = 'Describe the bug: symptoms, reproduction steps, expected vs actual behavior…';
-    if (nextBtn) nextBtn.textContent = 'Analyze Root Cause →';
-    if (jiraField) jiraField.style.display = 'none';
-    if (tmplField) tmplField.style.display = 'none';
-  } else if (specType === 'design-first') {
-    if (label)   label.textContent = 'Design description';
-    if (area)    area.placeholder = 'Describe the technical design, architecture, or approach…';
-    if (nextBtn) nextBtn.textContent = 'Generate Design →';
-    if (jiraField) jiraField.style.display = 'block';
-    if (tmplField) tmplField.style.display = 'block';
-  } else {
-    if (label)   label.textContent = 'Description';
-    if (area)    area.placeholder = 'Describe the feature, its purpose, key behaviors, and any constraints…';
-    if (nextBtn) nextBtn.textContent = 'Generate →';
-    if (jiraField) jiraField.style.display = 'block';
-    if (tmplField) tmplField.style.display = 'block';
-  }
-}
-
-function getWizardFormData() {
-  return {
-    specName:    document.getElementById('new-spec-name')?.value?.trim()   || '',
-    specType:    getSelectedSpecType(),
-    template:    document.getElementById('new-spec-template')?.value       || '',
-    description: document.getElementById('new-spec-prompt')?.value?.trim() || '',
-    jiraUrl:     document.getElementById('new-spec-jira')?.value?.trim()   || '',
-  };
-}
-
-// Jira URL → auto-infer Feature type
-document.getElementById('new-spec-jira')?.addEventListener('input', (e) => {
-  const val = e.target?.value?.trim() || '';
-  if (val && val.includes('atlassian.net')) {
-    const radio = document.querySelector('input[name="spec-type"][value="feature"]');
-    if (radio && !radio.checked) { radio.checked = true; updateStep1ForType(); }
-  }
-});
-
-// Spec type change
-document.querySelectorAll('input[name="spec-type"]').forEach(r => {
-  r.addEventListener('change', updateStep1ForType);
-});
-
-// Step 1 primary action: Clarify → OR direct generate (bugfix/design-first)
-document.getElementById('btn-wiz-next-1')?.addEventListener('click', () => {
-  const d = getWizardFormData();
-  if (!d.specName) { document.getElementById('new-spec-name')?.focus(); showToast('Please enter a spec name.'); return; }
-  if (!d.description && !d.jiraUrl) { document.getElementById('new-spec-prompt')?.focus(); showToast('Enter a description or Jira URL.'); return; }
-  closeNewModal();
-  vscode.postMessage({ command: 'createSpec', specName: d.specName, prompt: d.description, specType: d.specType, template: d.template, jiraUrl: d.jiraUrl || undefined });
-});
-
-document.getElementById('btn-new-cancel')?.addEventListener('click', closeNewModal);
-
-document.getElementById('new-spec-name')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-wiz-next-1')?.click(); }
-});
-document.getElementById('new-spec-prompt')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.metaKey) document.getElementById('btn-wiz-next-1')?.click();
-});
-
-
-// ── Delete modal ──────────────────────────────────────────────────────────────
-function openDeleteModal(name) {
-  pendingDelete = name;
-  document.getElementById('modal-delete-msg').textContent = \`Delete "\${name}"? This cannot be undone.\`;
-  document.getElementById('modal-delete')?.classList.remove('hidden');
-}
-document.getElementById('btn-del-cancel')?.addEventListener('click', () => {
-  pendingDelete = null;
-  document.getElementById('modal-delete')?.classList.add('hidden');
-});
-document.getElementById('btn-del-ok')?.addEventListener('click', () => {
-  if (pendingDelete) {
-    vscode.postMessage({ command: 'deleteSpec', specName: pendingDelete });
-    pendingDelete = null;
-  }
-  document.getElementById('modal-delete')?.classList.add('hidden');
-});
-
-// Close modals on overlay click (backdrop only); prevent overlay from capturing modal content clicks
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-  const modal = overlay.querySelector('.modal');
-  overlay.addEventListener('click', e => {
-    if (e.target === overlay || (modal && !modal.contains(e.target))) overlay.classList.add('hidden');
-  });
-  if (modal) modal.addEventListener('click', e => e.stopPropagation());
-});
-
-// ── Boot ──────────────────────────────────────────────────────────────────────
-restoreWebviewState();
-vscode.postMessage({ command: 'ready' });
-vscode.postMessage({ command: 'getModels' });
-</script>
+<script src="${panelJsUri}"></script>
 </body>
 </html>`;
   }
