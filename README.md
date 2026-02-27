@@ -32,81 +32,34 @@ Each stage feeds the next. If requirements change, cascade regenerates everythin
 
 ---
 
-## Screenshots
-
-> **Tip for contributors:** Replace each placeholder below with an actual screenshot once the extension is installed.
-
-### The nSpec Panel
-
-<!-- screenshot: panel open showing Requirements stage with FR list -->
-*The main panel showing a generated requirements stage. Open with `Ctrl+Shift+K`.*
-
-### Generating a Spec
-
-<!-- screenshot: "New Spec" input box in command palette -->
-*Run `nSpec: New Spec` from the Command Palette, enter a feature description, and the pipeline generates automatically.*
-
-### Design Stage
-
-<!-- screenshot: design.md rendered in the panel with architecture sections -->
-*The Design stage renders architecture, component breakdown, and data models derived from your requirements.*
-
-### Task Execution with Diff Review
-
-<!-- screenshot: diff editor showing a proposed file change with Accept/Reject buttons -->
-*Each AI-proposed change opens in VS Code's diff editor. Accept or reject per file before anything touches your codebase.*
-
-### Verify Health Score
-
-<!-- screenshot: verify.md panel showing score 87/100 with coverage matrix -->
-*The Verify stage scores your spec 0–100 and shows a coverage matrix mapping every requirement to a task.*
-
-### OpenSpec Customization
-
-<!-- screenshot: _prompts/ folder in Explorer with a custom requirements.md override -->
-*Override AI prompts per-stage or per-spec by dropping Markdown files into `_prompts/`.*
-
-### Steering Files
-
-<!-- screenshot: .specs/steering/ folder with product.md and tech.md open -->
-*Steering files inject persistent project context — tech stack, conventions, business rules — into every prompt.*
-
-### AI Model Selection
-
-<!-- screenshot: quick-pick dropdown from "nSpec: Select AI Model" showing gpt-4o, claude-sonnet, etc. -->
-*Pick any OpenAI or Anthropic model interactively via `nSpec: Select AI Model`.*
-
----
-
 ## Quick start
 
 > **The only required setting is your API key.**  
 > Set `nspec.apiKey` in VS Code Settings and everything else uses a working default.
 
-### VS Code + OpenAI Codex (recommended)
+### Prerequisites
 
-1. Install nSpec: **Extensions → ⋯ → Install from VSIX** → pick `nSpec-*.vsix`.
-2. Open **Settings** (`Ctrl+,`) → search **nspec** → set **API Key** to your OpenAI key (`sk-...`).
-3. Press **Ctrl+Shift+K** (Windows/Linux) or **Cmd+Shift+K** (Mac) to open the panel.
-4. Run **nSpec: New Spec** from the Command Palette — describe your feature and press Enter.
+- VS Code 1.93+ or Cursor
+- An OpenAI API key (`sk-...`) **or** an Anthropic API key (`sk-ant-...`)
 
-The default model is `gpt-4o` and specs are stored in `.specs/`. No further configuration needed.
+### VS Code + OpenAI (recommended)
 
-> **Rovo MCP (optional):** Set `nspec.rovoMcpConfigPath` to your `config.toml` path and nSpec will automatically enrich specs with live Jira, Confluence, and agent context.
+1. **Install:** Extensions panel → `⋯` menu → **Install from VSIX** → select `nSpec-*.vsix`
+2. **Add your key:** `Ctrl+,` → search `nspec` → set **API Key** to your OpenAI key
+3. **Open the panel:** `Ctrl+Shift+K` (Windows/Linux) or `Cmd+Shift+K` (Mac)
+4. **Create a spec:** Command Palette → **nSpec: New Spec** → enter a feature description → press Enter
 
----
+Specs are stored in `.specs/` and the default model is `gpt-4o`. No further configuration needed.
 
 ### Cursor
 
-1. Install nSpec: **Extensions → ⋯ → Install from VSIX** → pick `nSpec-*.vsix`.
-2. Open **Settings** (`Ctrl+,`) → search **nspec** → set **API Key** to your OpenAI or Anthropic key.
-   - OpenAI: `sk-...`
+1. **Install:** Extensions panel → `⋯` menu → **Install from VSIX** → select `nSpec-*.vsix`
+2. **Add your key:** `Ctrl+,` → search `nspec` → set **API Key**
+   - OpenAI: `sk-...` (default model: `gpt-4o`)
    - Anthropic: `sk-ant-...` → also set **API Base URL** to `https://api.anthropic.com/v1` and **Model** to e.g. `claude-sonnet-4-20250514`
-3. Press **Ctrl+Shift+K** to open the panel.
+3. **Open the panel:** `Ctrl+Shift+K`
 
 > **Tip:** Run **nSpec: Select AI Model** from the Command Palette to pick from available models interactively.
-
----
 
 ### Building from source
 
@@ -125,7 +78,7 @@ Install the `.vsix` via **Extensions → ⋯ → Install from VSIX**.
 
 | Action | How |
 |--------|-----|
-| Open panel | **Ctrl+Shift+K** / **Cmd+Shift+K**, or Command Palette: **nSpec: Open Panel** |
+| Open panel | `Ctrl+Shift+K` / `Cmd+Shift+K`, or Command Palette: **nSpec: Open Panel** |
 | Create a spec | Command Palette: **nSpec: New Spec** → enter name + description |
 | Navigate stages | Breadcrumb in the panel: **1 Requirements › 2 Design › 3 Tasks › 4 Verify** |
 | Refine a stage | Type feedback in the Refine bar beneath any stage → press **Refine** |
@@ -153,6 +106,8 @@ export NSPEC_API_BASE="https://api.anthropic.com/v1"
 export NSPEC_MODEL="claude-sonnet-4-20250514"
 ```
 
+> Run `npm run compile` once before using the CLI so `out/core/` exists.
+
 ### Commands
 
 ```bash
@@ -169,8 +124,6 @@ node bin/nspec.mjs check-tasks <name>                  # Scan codebase for task 
 node bin/nspec.mjs import <name> <stage> <file> \
   --transform                                          # Import & convert an existing doc
 ```
-
-> The CLI requires `npm run compile` first so `out/core/` exists.
 
 ---
 

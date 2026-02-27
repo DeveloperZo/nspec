@@ -377,11 +377,23 @@ export class LMClient {
     const cts = token ? null : new vscode.CancellationTokenSource();
     const cancelToken = token ?? cts!.token;
 
-    // If selected model is direct API — skip vscode.lm entirely
-    const direct = getDirectConfig();
-    if (this.selectedProvider !== 'vscode-lm' && direct) {
-      if (direct.provider === 'anthropic') {
-        return streamAnthropicDirect(
+    try {
+      // If selected model is direct API — skip vscode.lm entirely
+      const direct = getDirectConfig();
+      if (this.selectedProvider !== 'vscode-lm' && direct) {
+        if (direct.provider === 'anthropic') {
+          await streamAnthropicDirect(
+            direct,
+            systemPrompt,
+            userPrompt,
+            onChunk,
+            onDone,
+            onError,
+            cancelToken
+          );
+          return;
+        }
+        await streamOpenAICompat(
           direct,
           systemPrompt,
           userPrompt,
@@ -390,36 +402,39 @@ export class LMClient {
           onError,
           cancelToken
         );
+        return;
       }
-      return streamOpenAICompat(
-        direct,
-        systemPrompt,
-        userPrompt,
-        onChunk,
-        onDone,
-        onError,
-        cancelToken
-      );
-    }
 
-    // Try vscode.lm first
-    const lmModels = await getVSCodeLMModels();
-    if (lmModels.length > 0) {
-      return streamVSCodeLM(
-        this.selectedModelId,
-        systemPrompt,
-        userPrompt,
-        onChunk,
-        onDone,
-        onError,
-        cancelToken
-      );
-    }
+      // Try vscode.lm first
+      const lmModels = await getVSCodeLMModels();
+      if (lmModels.length > 0) {
+        await streamVSCodeLM(
+          this.selectedModelId,
+          systemPrompt,
+          userPrompt,
+          onChunk,
+          onDone,
+          onError,
+          cancelToken
+        );
+        return;
+      }
 
-    // Fallback to direct API
-    if (direct) {
-      if (direct.provider === 'anthropic') {
-        return streamAnthropicDirect(
+      // Fallback to direct API
+      if (direct) {
+        if (direct.provider === 'anthropic') {
+          await streamAnthropicDirect(
+            direct,
+            systemPrompt,
+            userPrompt,
+            onChunk,
+            onDone,
+            onError,
+            cancelToken
+          );
+          return;
+        }
+        await streamOpenAICompat(
           direct,
           systemPrompt,
           userPrompt,
@@ -428,23 +443,17 @@ export class LMClient {
           onError,
           cancelToken
         );
+        return;
       }
-      return streamOpenAICompat(
-        direct,
-        systemPrompt,
-        userPrompt,
-        onChunk,
-        onDone,
-        onError,
-        cancelToken
-      );
-    }
 
-    onError(
-      'No AI provider configured. ' +
-        'In VS Code: install GitHub Copilot. ' +
-        'In Cursor: add an API key in nSpec settings (nspec.apiKey).'
-    );
+      onError(
+        'No AI provider configured. ' +
+          'In VS Code: install GitHub Copilot. ' +
+          'In Cursor: add an API key in nSpec settings (nspec.apiKey).'
+      );
+    } finally {
+      cts?.dispose();
+    }
   }
 
   /** Send a request with tool definitions and parse tool call responses into ProposedChanges. */
@@ -458,20 +467,27 @@ export class LMClient {
     const cts = token ? null : new vscode.CancellationTokenSource();
     const cancelToken = token ?? cts!.token;
 
-    if ((this.selectedProvider !== 'vscode-lm' && direct) || !(await getVSCodeLMModels()).length) {
-      if (!direct) throw new Error('No AI provider configured.');
-      return direct.provider === 'anthropic'
-        ? callAnthropicWithTools(direct, systemPrompt, userPrompt, tools, cancelToken)
-        : callOpenAIWithTools(direct, systemPrompt, userPrompt, tools, cancelToken);
-    }
+    try {
+      if (
+        (this.selectedProvider !== 'vscode-lm' && direct) ||
+        !(await getVSCodeLMModels()).length
+      ) {
+        if (!direct) throw new Error('No AI provider configured.');
+        return direct.provider === 'anthropic'
+          ? await callAnthropicWithTools(direct, systemPrompt, userPrompt, tools, cancelToken)
+          : await callOpenAIWithTools(direct, systemPrompt, userPrompt, tools, cancelToken);
+      }
 
-    return callVSCodeLMWithTools(
-      this.selectedModelId,
-      systemPrompt,
-      userPrompt,
-      tools,
-      cancelToken
-    );
+      return await callVSCodeLMWithTools(
+        this.selectedModelId,
+        systemPrompt,
+        userPrompt,
+        tools,
+        cancelToken
+      );
+    } finally {
+      cts?.dispose();
+    }
   }
 }
 

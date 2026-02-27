@@ -31,7 +31,7 @@ Please run `npm run lint` and `npm run format:check` (or fix/format) before subm
 
 ## Tests
 
-- **Unit tests:** `npm test` — runs the core test suite (when present).
+- **Unit tests:** `npm test` — runs the unit test suite (core logic: task parsing, folder names, hook resolution).
 - **Extension tests:** Use the **Run Extension Tests** launch config in VS Code/Cursor (runs the extension host test suite).
 
 Running these before pushing helps catch regressions.

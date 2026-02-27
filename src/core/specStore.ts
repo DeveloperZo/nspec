@@ -127,6 +127,207 @@ export function scaffoldCustomPrompts(specsRoot: string, specName: string): void
   }
 }
 
+/**
+ * Writes a tree of annotated example files into .specs/examples/.
+ * Shows users how to customize nSpec behavior using steering files,
+ * role overrides, prompt overrides, and extra sections — without touching
+ * any live spec data.
+ */
+export function scaffoldExamples(specsRoot: string): string[] {
+  const examplesDir = path.join(specsRoot, 'examples');
+  const steeringDir = path.join(examplesDir, 'steering');
+  const perSpecDir = path.join(examplesDir, 'per-spec');
+  const promptsDir = path.join(perSpecDir, '_prompts');
+  const sectionsDir = path.join(perSpecDir, '_sections');
+
+  for (const dir of [steeringDir, promptsDir, sectionsDir]) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  const written: string[] = [];
+
+  function write(filePath: string, content: string) {
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, content, 'utf-8');
+      written.push(path.relative(specsRoot, filePath));
+    }
+  }
+
+  // ── README ──────────────────────────────────────────────────────────────────
+  write(
+    path.join(examplesDir, 'README.md'),
+    `# nSpec Customization Examples
+
+This folder contains ready-to-use example files for every nSpec customization hook.
+Each file is annotated with instructions. Copy the ones you need to the paths shown.
+
+## Workspace-wide steering (applies to every spec)
+
+| Example file | Copy to |
+|---|---|
+| \`steering/product.md\` | \`.specs/steering/product.md\` |
+| \`steering/tech.md\` | \`.specs/steering/tech.md\` |
+
+Steering files are injected into every AI prompt automatically.
+Add as many as you like — they are loaded alphabetically.
+
+## Per-spec customization (applies to one spec)
+
+| Example file | Copy to |
+|---|---|
+| \`per-spec/_steering.md\` | \`.specs/<name>/_steering.md\` |
+| \`per-spec/_role.md\` | \`.specs/<name>/_role.md\` |
+| \`per-spec/_prompts/requirements.md\` | \`.specs/<name>/_prompts/requirements.md\` |
+| \`per-spec/_sections/tasks.md\` | \`.specs/<name>/_sections/tasks.md\` |
+
+Replace \`<name>\` with your spec's folder name (e.g. \`user-auth\`).
+
+## Tip
+
+Run **nSpec: Setup Steering Files** from the Command Palette to auto-generate
+\`product.md\`, \`tech.md\`, and \`structure.md\` steering files from your workspace.
+`
+  );
+
+  // ── Workspace steering: product.md ─────────────────────────────────────────
+  write(
+    path.join(steeringDir, 'product.md'),
+    `# Product Context
+<!-- Copy this file to .specs/steering/product.md -->
+<!-- It is injected into every AI prompt as project background. -->
+
+## What we're building
+
+<!-- Describe your product in 1–3 sentences. -->
+Example Corp builds a SaaS platform for construction project managers.
+Our users track bids, timelines, and subcontractor workflows.
+
+## Target users
+
+- Project managers at mid-size construction firms (10–200 employees)
+- Field supervisors who need mobile-friendly views
+- Estimators who generate bid documents
+
+## Business rules
+
+- All monetary values are in USD; support multi-currency is out of scope.
+- Projects are owned by a single organization; cross-org sharing is not supported.
+- Compliance: SOC 2 Type II controls apply to all data storage.
+`
+  );
+
+  // ── Workspace steering: tech.md ─────────────────────────────────────────────
+  write(
+    path.join(steeringDir, 'tech.md'),
+    `# Technology Stack
+<!-- Copy this file to .specs/steering/tech.md -->
+<!-- Keeps AI suggestions aligned with your actual stack. -->
+
+## Languages & runtimes
+
+- TypeScript 5.x (strict mode)
+- Node.js 20 LTS
+
+## Frameworks & libraries
+
+- Backend: Express 4, Zod for validation, Drizzle ORM
+- Frontend: React 18, Vite, Tailwind CSS
+- Testing: Vitest, Playwright for e2e
+
+## Conventions
+
+- File naming: kebab-case for files, PascalCase for components/classes
+- Errors: throw typed Error subclasses; never swallow exceptions silently
+- API responses: \`{ data, error, meta }\` envelope
+- No \`any\` — use \`unknown\` + type narrowing instead
+
+## Infrastructure
+
+- Deployed to AWS (ECS Fargate + RDS Postgres)
+- CI/CD: GitHub Actions
+- Secrets: AWS Secrets Manager (never in env files committed to git)
+`
+  );
+
+  // ── Per-spec steering ───────────────────────────────────────────────────────
+  write(
+    path.join(perSpecDir, '_steering.md'),
+    `# Spec-Specific Context
+<!-- Copy this file to .specs/<name>/_steering.md -->
+<!-- Adds domain knowledge scoped to a single spec. -->
+<!-- Stacks on top of workspace-wide steering. -->
+
+## Domain context for this spec
+
+This spec covers the **billing module**.
+
+- Payments are processed via Stripe; we do not store raw card data.
+- Invoices are immutable once issued — corrections use credit notes.
+- All billing events must be audit-logged with user ID, timestamp, and delta.
+
+## Constraints
+
+- Must not introduce new direct database writes from the frontend.
+- Pricing logic lives in \`src/billing/pricing.ts\` — do not duplicate it.
+`
+  );
+
+  // ── Per-spec role override ──────────────────────────────────────────────────
+  write(
+    path.join(perSpecDir, '_role.md'),
+    `# AI Role Override
+<!-- Copy this file to .specs/<name>/_role.md -->
+<!-- Replaces the default "senior software engineer" persona for this spec. -->
+<!-- Useful for domain-specific voice (e.g. security, data science, mobile). -->
+
+You are a senior security engineer with 10 years of experience in payment systems
+and PCI-DSS compliance. You write precise, threat-modeled requirements and flag
+any design choice that could expose cardholder data or violate compliance rules.
+When reviewing tasks, you call out missing audit trails and access-control gaps.
+`
+  );
+
+  // ── Per-spec prompt override ────────────────────────────────────────────────
+  write(
+    path.join(promptsDir, 'requirements.md'),
+    `# Requirements Prompt Override
+<!-- Copy this file to .specs/<name>/_prompts/requirements.md -->
+<!-- Completely replaces the nSpec requirements-generation system prompt. -->
+<!-- Use {title} as a placeholder for the spec name. -->
+<!-- For workspace-wide override, copy to .specs/_prompts/requirements.md instead. -->
+
+You are a business analyst writing formal software requirements.
+
+Given the feature description for **{title}**, produce a requirements document with:
+
+1. A one-paragraph **Executive Summary**
+2. **Functional Requirements** (FR-1, FR-2, …) in Given/When/Then format
+3. **Non-Functional Requirements** covering performance, security, and accessibility
+4. **Out of Scope** — explicitly list what is NOT included
+5. **Open Questions** — unresolved decisions that need stakeholder input
+
+Be concise. Each FR should fit in 3–5 lines. Flag any ambiguity rather than
+making assumptions.
+`
+  );
+
+  // ── Per-spec extra sections ─────────────────────────────────────────────────
+  write(
+    path.join(sectionsDir, 'tasks.md'),
+    `# Extra Sections for Tasks Stage
+<!-- Copy this file to .specs/<name>/_sections/tasks.md -->
+<!-- Each non-blank, non-heading line is appended as an extra output section. -->
+<!-- The AI generates content for each section you list here. -->
+
+Definition of Done
+Testing Checklist
+Rollback Plan
+`
+  );
+
+  return written;
+}
+
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 
 export function listSpecs(specsRoot: string): SpecInfo[] {

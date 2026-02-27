@@ -189,6 +189,11 @@
           "type": "string",
           "default": "",
           "description": "Path to config.toml (or similar) that defines Rovo MCP. Used when checking Rovo MCP before Jira URL. Relative paths are resolved from workspace root. Leave empty to use .cursor/mcp.json instead."
+        },
+        "nspec.showExamplesPrompt": {
+          "type": "boolean",
+          "default": true,
+          "description": "When a new workspace has no .specs/ folder, offer to generate example customization files (steering, role, prompt overrides). Set to false to disable this prompt."
         }
       }
     },

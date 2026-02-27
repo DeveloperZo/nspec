@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { SpecPanelProvider } from './SpecPanelProvider';
-import { loadHooks } from './core/specStore';
+import { loadHooks, scaffoldExamples } from './core/specStore';
 import { runMatchingHooks, HookTrigger } from './core/hooks';
 import { registerChatParticipant } from './chatParticipant';
 import { getSpecsRoot, getWorkspaceRoot } from './workspace';
@@ -54,6 +54,41 @@ export function activate(context: vscode.ExtensionContext) {
 
   // ── Hooks: file-save triggered automations ────────────────────────────────
   setupHooksWatcher(context);
+
+  // ── Examples prompt: offer example customization files on first use ────────
+  promptExamplesIfNew();
+}
+
+async function promptExamplesIfNew() {
+  const config = vscode.workspace.getConfiguration('nspec');
+  if (config.get<boolean>('showExamplesPrompt') === false) return;
+
+  const specsRoot = getSpecsRoot();
+  if (!specsRoot) return;
+
+  // Only prompt when the .specs folder doesn't yet exist
+  const fs = await import('fs');
+  if (fs.existsSync(specsRoot)) return;
+
+  const answer = await vscode.window.showInformationMessage(
+    'Welcome to nSpec! Would you like example customization files (steering, role overrides, prompt templates) added to .specs/examples/?',
+    'Generate Examples',
+    'Not Now',
+    "Don't Ask Again"
+  );
+
+  if (answer === 'Generate Examples') {
+    try {
+      const written = scaffoldExamples(specsRoot);
+      vscode.window.showInformationMessage(
+        `nSpec: Generated ${written.length} example file${written.length === 1 ? '' : 's'} in .specs/examples/`
+      );
+    } catch (err) {
+      vscode.window.showErrorMessage(`nSpec: Failed to generate examples — ${String(err)}`);
+    }
+  } else if (answer === "Don't Ask Again") {
+    await config.update('showExamplesPrompt', false, vscode.ConfigurationTarget.Global);
+  }
 }
 
 function setupFileWatcher(context: vscode.ExtensionContext) {
@@ -137,23 +172,20 @@ function setupHooksWatcher(context: vscode.ExtensionContext) {
   );
 
   // Re-scan hooks when hook files change
+  const wsFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!wsFolder) return;
   const hookPattern = new vscode.RelativePattern(
-    vscode.workspace.workspaceFolders![0],
+    wsFolder,
     `${vscode.workspace.getConfiguration('nspec').get<string>('specsFolder', '.specs')}/hooks/**/*.json`
   );
   const hookWatcher = vscode.workspace.createFileSystemWatcher(hookPattern);
-  hookWatcher.onDidChange(() => {
+  const refreshHookCount = () => {
     const updated = loadHooks(specsRoot);
     statusBarItem.text = `$(zap) ${updated.length} hook${updated.length === 1 ? '' : 's'}`;
-  });
-  hookWatcher.onDidCreate(() => {
-    const updated = loadHooks(specsRoot);
-    statusBarItem.text = `$(zap) ${updated.length} hook${updated.length === 1 ? '' : 's'}`;
-  });
-  hookWatcher.onDidDelete(() => {
-    const updated = loadHooks(specsRoot);
-    statusBarItem.text = `$(zap) ${updated.length} hook${updated.length === 1 ? '' : 's'}`;
-  });
+  };
+  hookWatcher.onDidChange(refreshHookCount);
+  hookWatcher.onDidCreate(refreshHookCount);
+  hookWatcher.onDidDelete(refreshHookCount);
   context.subscriptions.push(hookWatcher);
 }
 

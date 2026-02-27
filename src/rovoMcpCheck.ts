@@ -7,8 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const toml = require('toml');
+import toml from 'toml';
 
 const ROVO_SERVER_KEYS = ['atlassian-rovo-mcp', 'rovo'];
 const MCP_FILENAME = 'mcp.json';

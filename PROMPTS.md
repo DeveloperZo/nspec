@@ -11,7 +11,8 @@ composable system prompts assembled at runtime from:
 ## File layout
 
 ```
-src/prompts.ts          <- templates, defaults, assembly engine
+src/core/prompts.ts     <- templates, defaults, assembly engine
+src/prompts.ts          <- re-exports from core/prompts.ts (backwards compat)
 
 .specs/                  <- workspace-wide overrides
   _steering.md          <- domain context for all specs
