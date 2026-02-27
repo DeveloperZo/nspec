@@ -32,17 +32,23 @@ export function parseJiraUrl(url: string): { host: string; issueKey: string } | 
   return null;
 }
 
+/** Partial Atlassian Document Format node shape. */
+interface AdfNode {
+  type?: string;
+  text?: string;
+  content?: AdfNode[];
+}
+
 /**
  * Convert Atlassian Document Format (ADF) description to plain text.
  * Handles common node types: paragraph, text, heading, listItem, bulletList, orderedList, codeBlock.
  */
-function adfToPlainText(node: unknown): string {
+function adfToPlainText(node: AdfNode | string | null | undefined): string {
   if (node == null) return '';
   if (typeof node === 'string') return node;
-  const n = node as { type?: string; content?: unknown[]; text?: string };
-  if (n.text) return n.text;
-  if (!Array.isArray(n.content)) return '';
-  return n.content.map((c) => adfToPlainText(c)).join('');
+  if (node.text) return node.text;
+  if (!Array.isArray(node.content)) return '';
+  return node.content.map((c) => adfToPlainText(c)).join('');
 }
 
 /**
@@ -90,7 +96,7 @@ export async function fetchJiraIssueAsUserStory(
     key?: string;
     fields?: {
       summary?: string;
-      description?: { content?: unknown[] };
+      description?: AdfNode;
       issuetype?: { name?: string };
     };
   };
@@ -110,11 +116,7 @@ export async function fetchJiraIssueAsUserStory(
   const summary = (fields.summary || '').trim();
   let description = '';
   const descNode = fields.description;
-  if (
-    descNode &&
-    typeof descNode === 'object' &&
-    Array.isArray((descNode as { content?: unknown[] }).content)
-  ) {
+  if (descNode) {
     description = adfToPlainText(descNode).trim();
   }
 

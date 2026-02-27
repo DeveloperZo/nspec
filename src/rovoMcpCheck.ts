@@ -19,10 +19,9 @@ export interface RovoMcpCheckResult {
   path: string | null;
 }
 
-function hasRovoInServers(servers: unknown): boolean {
-  if (!servers || typeof servers !== 'object') return false;
-  const keys = Object.keys(servers as Record<string, unknown>);
-  return keys.some((k) => ROVO_SERVER_KEYS.includes(k) || k.toLowerCase().includes('rovo'));
+function hasRovoInServers(servers: Record<string, unknown> | null | undefined): boolean {
+  if (!servers) return false;
+  return Object.keys(servers).some((k) => ROVO_SERVER_KEYS.includes(k) || k.toLowerCase().includes('rovo'));
 }
 
 /**
@@ -40,7 +39,7 @@ function checkTomlConfigPath(
   if (!resolved || !fs.existsSync(resolved)) return null;
   try {
     const raw = fs.readFileSync(resolved, 'utf-8');
-    const data = toml.parse(raw) as { mcpServers?: unknown };
+    const data = toml.parse(raw) as { mcpServers?: Record<string, unknown> };
     if (hasRovoInServers(data?.mcpServers)) {
       return { configured: true, source: 'config.toml', path: resolved };
     }

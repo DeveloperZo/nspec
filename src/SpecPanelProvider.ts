@@ -87,10 +87,7 @@ export class SpecPanelProvider {
 
   triggerNewSpec() {
     this.show();
-    (globalThis as unknown as { setTimeout: (fn: () => void, ms: number) => void }).setTimeout(
-      () => this.postMessage({ type: 'triggerNewSpec' }),
-      400
-    );
+    setTimeout(() => this.postMessage({ type: 'triggerNewSpec' }), 400);
   }
 
   async pickModel() {
@@ -237,9 +234,9 @@ export class SpecPanelProvider {
         extractedDescription += chunk;
       },
       () => {},
-      (err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        const clean = msg.replace(/^[\s\S]*?Error:\s*/i, '').slice(0, 120);
+      (err: string) => {
+
+        const clean = err.replace(/^[\s\S]*?Error:\s*/i, '').slice(0, 120);
         vscode.window.showErrorMessage(
           `nSpec: ${clean}${clean.length >= 120 ? 'â€¦' : ''}. Check Settings â†’ nSpec if it continues.`
         );
@@ -278,7 +275,7 @@ export class SpecPanelProvider {
     this.panel.webview.html = this.buildHtml(this.panel.webview);
 
     this.panel.webview.onDidReceiveMessage(
-      (msg: unknown) => this.handleMessage(msg as ToExtensionMessage),
+      (msg: ToExtensionMessage) => this.handleMessage(msg),
       undefined,
       this.context.subscriptions
     );
@@ -616,9 +613,9 @@ export class SpecPanelProvider {
         () => {
           this.postMessage({ type: 'clarificationStreamDone', questions: accumulated });
         },
-        (err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          const clean = msg.replace(/^[\s\S]*?Error:\s*/i, '').slice(0, 120);
+        (err: string) => {
+
+          const clean = err.replace(/^[\s\S]*?Error:\s*/i, '').slice(0, 120);
           this.postMessage({ type: 'clarificationError', message: clean });
         }
       );
@@ -791,9 +788,9 @@ export class SpecPanelProvider {
           });
           vscode.window.showInformationMessage(`nSpec: Imported and transformed into ${stage}.md`);
         },
-        (err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          this.postMessage({ type: 'error', message: msg });
+        (err: string) => {
+
+          this.postMessage({ type: 'error', message: err });
         },
         cts.token
       );

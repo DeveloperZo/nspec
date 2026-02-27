@@ -865,8 +865,11 @@ function checkPackageDep(root: string, packageName: string): boolean {
   const pkgPath = path.join(root, 'package.json');
   if (!fs.existsSync(pkgPath)) return false;
   try {
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const deps: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
     return packageName in deps;
   } catch {
     return false;
