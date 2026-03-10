@@ -1,10 +1,9 @@
 # nSpec
 
-> **Spec-driven development for VS Code and Cursor.**  
+> **Spec-driven development for Cursor and Claude Code.**
 > Turn a feature description into a traceable **Requirements → Design → Tasks → Verify** pipeline — then execute tasks with AI-reviewed diffs.
 
 [![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/nspec/nSpec/releases)
-[![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.93.0-007ACC)](https://marketplace.visualstudio.com/items?itemName=awilliams.nSpec)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 ---
@@ -34,43 +33,65 @@ Each stage feeds the next. If requirements change, cascade regenerates everythin
 
 ## Quick start
 
-> **The only required setting is your API key.**  
-> Set `nspec.apiKey` in VS Code Settings and everything else uses a working default.
+### Cursor (panel)
 
-### Prerequisites
+1. **Install:** Extensions panel → `⋯` → **Install from VSIX** → select `nSpec-*.vsix`
+2. **Add your key:** `Cmd+,` → search `nspec` → set **API Key** to your Anthropic key (`sk-ant-...`), **API Base URL** to `https://api.anthropic.com/v1`, **Model** to `claude-sonnet-4-20250514`
+3. **Open the panel:** `Cmd+Shift+K`
+4. **Create a spec:** Click **+ New Spec** → enter a name and feature description
 
-- VS Code 1.93+ or Cursor
-- An OpenAI API key (`sk-...`) **or** an Anthropic API key (`sk-ant-...`)
+Specs are stored in `.specs/` in your workspace.
 
-### VS Code + OpenAI (recommended)
+### Claude Code (CLI + slash commands)
 
-1. **Install:** Extensions panel → `⋯` menu → **Install from VSIX** → select `nSpec-*.vsix`
-2. **Add your key:** `Ctrl+,` → search `nspec` → set **API Key** to your OpenAI key
-3. **Open the panel:** `Ctrl+Shift+K` (Windows/Linux) or `Cmd+Shift+K` (Mac)
-4. **Create a spec:** Command Palette → **nSpec: New Spec** → enter a feature description → press Enter
+```bash
+# Set your key (add to ~/.bashrc or ~/.zshrc to persist)
+export NSPEC_API_KEY="sk-ant-..."
+export NSPEC_API_BASE="https://api.anthropic.com/v1"
+export NSPEC_MODEL="claude-sonnet-4-20250514"
 
-Specs are stored in `.specs/` and the default model is `gpt-4o`. No further configuration needed.
+# Or use a .env file in the project root (see .env.example)
+```
 
-### Cursor
+Then use the slash commands directly in Claude Code:
 
-1. **Install:** Extensions panel → `⋯` menu → **Install from VSIX** → select `nSpec-*.vsix`
-2. **Add your key:** `Ctrl+,` → search `nspec` → set **API Key**
-   - OpenAI: `sk-...` (default model: `gpt-4o`)
-   - Anthropic: `sk-ant-...` → also set **API Base URL** to `https://api.anthropic.com/v1` and **Model** to e.g. `claude-sonnet-4-20250514`
-3. **Open the panel:** `Ctrl+Shift+K`
+```
+/spec auth-feature        # generate a spec from this conversation
+/spec-status              # list all specs + health scores
+/spec-status auth-feature # detail view for one spec
+/spec-refine auth-feature requirements  # refine a stage with conversation feedback
+```
 
-> **Tip:** Run **nSpec: Select AI Model** from the Command Palette to pick from available models interactively.
+Or drive the full pipeline via CLI:
+
+```bash
+node bin/nspec.mjs init auth-feature
+node bin/nspec.mjs generate auth-feature requirements --description "Add OAuth2 login..."
+node bin/nspec.mjs cascade auth-feature          # design → tasks → verify
+node bin/nspec.mjs verify auth-feature --scheme committee
+node bin/nspec.mjs check-tasks auth-feature      # scan codebase for completion evidence
+```
 
 ### Building from source
 
 ```bash
 git clone https://github.com/nspec/nSpec.git
 cd nSpec
-npm install
+npm install              # installs tsc and all devDependencies
+npm run compile          # builds out/ (required before first run)
 npm run package          # produces nSpec-*.vsix
 ```
 
 Install the `.vsix` via **Extensions → ⋯ → Install from VSIX**.
+
+**Developing from source:**
+
+```bash
+npm install && npm run compile
+# Press F5 in Cursor to launch the Extension Development Host
+```
+
+> **Mac / Linux note:** `tsc` is a local devDependency — no global install needed. `npm run compile` uses `node_modules/.bin/tsc` automatically.
 
 ---
 
@@ -78,35 +99,33 @@ Install the `.vsix` via **Extensions → ⋯ → Install from VSIX**.
 
 | Action | How |
 |--------|-----|
-| Open panel | `Ctrl+Shift+K` / `Cmd+Shift+K`, or Command Palette: **nSpec: Open Panel** |
-| Create a spec | Command Palette: **nSpec: New Spec** → enter name + description |
-| Navigate stages | Breadcrumb in the panel: **1 Requirements › 2 Design › 3 Tasks › 4 Verify** |
-| Refine a stage | Type feedback in the Refine bar beneath any stage → press **Refine** |
+| Open panel | `Cmd+Shift+K` (Mac) / `Ctrl+Shift+K` (Win/Linux), or Command Palette: **nSpec: Open Panel** |
+| Create a spec | Click **+ New Spec** → enter name + description |
+| Navigate stages | Breadcrumb: **1 Requirements › 2 Design › 3 Tasks › 4 Verify** |
+| Refine a stage | Type feedback in the Refine bar → press **Refine** |
 | Cascade downstream | Press **Cascade** to regenerate all stages below the current one |
-| Run tasks (supervised) | Click **Run all tasks** in the Tasks stage — review each diff before it applies |
+| Run tasks (supervised) | Click **Run all tasks** — review each diff before it applies |
 | Check task completion | Command Palette: **nSpec: Check Task Completion** |
-| Custom prompts | Click the **✦ OpenSpec** badge in the breadcrumb to scaffold `_prompts/` |
+| Custom prompts | Click the **✦ OpenSpec** badge to scaffold `_prompts/` for the active spec |
 | Setup steering | Command Palette: **nSpec: Setup Steering Files** |
 
 ---
 
 ## CLI
 
-The CLI is designed for agent-driven workflows (Claude Code, Codex, scripts). It reads `NSPEC_API_KEY` from the environment.
+The CLI is the primary interface for Claude Code and agent-driven workflows.
 
 ### Setup
 
 ```bash
-# Copy and fill in your API key
+# .env file (recommended — copy .env.example and fill in):
 cp .env.example .env
-# or export directly:
-export NSPEC_API_KEY="sk-..."          # OpenAI
-export NSPEC_API_KEY="sk-ant-..."      # Anthropic
+
+# or export directly in your shell:
+export NSPEC_API_KEY="sk-ant-..."
 export NSPEC_API_BASE="https://api.anthropic.com/v1"
 export NSPEC_MODEL="claude-sonnet-4-20250514"
 ```
-
-> Run `npm run compile` once before using the CLI so `out/core/` exists.
 
 ### Commands
 
@@ -122,7 +141,7 @@ node bin/nspec.mjs status                              # List all specs
 node bin/nspec.mjs status <name>                       # Detail view with health score
 node bin/nspec.mjs check-tasks <name>                  # Scan codebase for task completion
 node bin/nspec.mjs import <name> <stage> <file> \
-  --transform                                          # Import & convert an existing doc
+  --transform                                          # Import & AI-convert an existing doc
 ```
 
 ---
@@ -131,66 +150,48 @@ node bin/nspec.mjs import <name> <stage> <file> \
 
 ### Claude Code
 
-Three slash commands are registered in `.claude/commands/`:
+Three slash commands are registered in `.claude/commands/` and available in every Claude Code session:
 
 | Command | What it does |
 |---------|-------------|
-| `/spec <name>` | Pipe the current conversation to the spec pipeline (requirements → design → tasks → verify) |
-| `/spec-status [name]` | Show spec status or health score for a specific spec |
+| `/spec <name>` | Generate a full spec pipeline from the current conversation |
+| `/spec-status [name]` | Show spec status overview or health score for a specific spec |
 | `/spec-refine <name> <stage>` | Refine a spec stage using conversation feedback |
 
-**Example:**
+Claude Code captures the conversation, runs `vibe-to-spec`, and reports the health score. `NSPEC_API_KEY` must be set in your shell.
 
-```
-/spec auth-feature
-```
+### Vibe-to-spec
 
-Claude Code captures the conversation, runs `vibe-to-spec`, and reports the health score. Set `NSPEC_API_KEY` in your shell before running.
+Convert any conversation or transcript into a spec:
 
-### OpenAI Codex
+```bash
+# From a file
+node bin/nspec.mjs vibe-to-spec my-feature --transcript chat.md --cascade
 
-Use the `@nspec` chat participant in VS Code chat with Codex:
-
-| Command | What it does |
-|---------|-------------|
-| `@nspec /spec <name>` | Generate a spec from the chat conversation |
-| `@nspec /status [name]` | Show spec status |
-| `@nspec /refine <name> <stage>` | Refine a spec stage |
-| `@nspec /context <name>` | Inject a spec's full content as chat context |
-
-Requires `nspec.apiKey` set to your OpenAI key. When a Rovo MCP connection is configured (`nspec.rovoMcpConfigPath`), Codex can pull live Jira issues, Confluence pages, and agent context directly into spec generation.
-
-**Cross-referencing a spec in chat:**  
-Type `spec:<name>` or `#spec:<name>` anywhere in a Codex chat message to inject the spec's requirements, design, and tasks as context:
-
-```
-Implement task 3 from spec:user-auth
+# From stdin
+cat conversation.md | node bin/nspec.mjs vibe-to-spec my-feature --cascade
 ```
 
 ---
 
-## Configuration reference
+## Configuration (Cursor settings)
 
-All settings are under **Settings → nSpec** (search `nspec` in the VS Code settings UI).
+All settings are under `Cmd+,` → search `nspec`.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `nspec.specsFolder` | `.specs` | Folder (relative to workspace root) where specs are stored |
-| `nspec.apiKey` | — | OpenAI or Anthropic API key. Required for VS Code + Codex and CLI usage. |
-| `nspec.apiBaseUrl` | `https://api.openai.com/v1` | API base URL. For Anthropic: `https://api.anthropic.com/v1`. For local Ollama: `http://localhost:11434/v1`. |
-| `nspec.apiModel` | `gpt-4o` | Model name. Examples: `gpt-4o`, `claude-sonnet-4-20250514`, `llama3`. |
-| `nspec.preferredModelId` | — | VS Code model ID. Set via **nSpec: Select AI Model** command. |
-| `nspec.allowedCommands` | `["npm install","npm run","npx"]` | Command prefixes auto-approved during supervised task execution. All others require manual approval. |
-| `nspec.jiraBaseUrl` | — | Jira base URL (e.g. `https://your-domain.atlassian.net`). Optional when using a full Jira browse URL. |
-| `nspec.jiraEmail` | — | Email for Jira Cloud API authentication. |
-| `nspec.jiraApiToken` | — | Jira Cloud API token. Create one at [Atlassian API tokens](https://id.atlassian.com/manage-profile/security/api-tokens). |
-| `nspec.rovoMcpConfigPath` | — | Path to `config.toml` for Rovo MCP. Relative to workspace root. Leave empty to use `.cursor/mcp.json`. |
+| `nspec.apiKey` | — | Anthropic (or OpenAI) API key |
+| `nspec.apiBaseUrl` | `https://api.openai.com/v1` | API base URL — set to `https://api.anthropic.com/v1` for Anthropic |
+| `nspec.apiModel` | `gpt-4o` | Model name — set to `claude-sonnet-4-20250514` for Claude |
+| `nspec.specsFolder` | `.specs` | Folder where specs are stored (relative to workspace root) |
+| `nspec.allowedCommands` | `["npm install","npm run","npx"]` | Commands auto-approved during supervised task execution |
+| `nspec.jiraBaseUrl` | — | Jira base URL (optional — parsed from browse URL automatically) |
+| `nspec.jiraEmail` | — | Jira Cloud email for API authentication |
+| `nspec.jiraApiToken` | — | Jira Cloud API token ([create one here](https://id.atlassian.com/manage-profile/security/api-tokens)) |
 
 ---
 
 ## Spec structure
-
-Each spec lives in `.specs/<name>/`:
 
 ```
 .specs/
@@ -230,11 +231,10 @@ Run **nSpec: Setup Steering Files** to auto-generate `product.md`, `tech.md`, an
 
 | Symptom | Fix |
 |---------|-----|
-| **No models found** | Set `nspec.apiKey` to your OpenAI (or Anthropic) key in VS Code or Cursor Settings. |
-| **Generation failed** | Check your API key, network connection, and model name. For Anthropic, verify `apiBaseUrl` is set to `https://api.anthropic.com/v1`. |
-| **CLI: NSPEC_API_KEY is required** | `export NSPEC_API_KEY="sk-..."` in your shell before running CLI commands. |
-| **Panel empty or stale** | Reopen the panel. Make sure a folder is open (File → Open Folder) and `.specs/` exists. |
-| **No workspace folder** | Open a folder (File → Open Folder) before creating specs. |
+| **Generation failed / no models** | Verify `nspec.apiKey` (Anthropic: `sk-ant-...`), `nspec.apiBaseUrl` (`https://api.anthropic.com/v1`), and `nspec.apiModel` (`claude-sonnet-4-20250514`) in Cursor Settings. |
+| **CLI: NSPEC_API_KEY is required** | Set `NSPEC_API_KEY`, `NSPEC_API_BASE`, and `NSPEC_MODEL` in your shell or `.env` file. |
+| **Panel doesn't open after cloning** | Run `npm install && npm run compile` first — `out/` must exist before the extension activates. |
+| **Panel empty or stale** | Reopen the panel. Make sure a folder is open and `.specs/` exists. |
 | **Tasks regeneration wiped my checkboxes** | `_progress.json` persists task state independently — checkboxes are restored automatically on next panel open. |
 
 **Logs:** Output panel → select **nSpec** or **nSpec Hooks**.
@@ -243,7 +243,7 @@ Run **nSpec: Setup Steering Files** to auto-generate `product.md`, `tech.md`, an
 
 ## Security
 
-- **Never commit API keys.** Use VS Code Settings (stored in your user profile, not the workspace) or environment variables for CLI usage. See `.env.example`.
+- **Never commit API keys.** Use Cursor Settings (stored in your user profile) or environment variables for CLI usage. See `.env.example`.
 - The `.gitignore` excludes `.env`, `.env.*`, and `*.local.json` by default.
 - Supervised task execution requires explicit approval for shell commands not in `nspec.allowedCommands`.
 
@@ -254,5 +254,4 @@ Run **nSpec: Setup Steering Files** to auto-generate `product.md`, `tech.md`, an
 - **CLI and agent usage:** [AGENTS.md](AGENTS.md)
 - **Claude Code slash commands:** [CLAUDE.md](CLAUDE.md)
 - **Prompt system:** [PROMPTS.md](PROMPTS.md)
-- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)

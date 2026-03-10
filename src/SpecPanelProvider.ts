@@ -6,12 +6,11 @@ import type { ToExtensionMessage, FromExtensionMessage } from './webviewMessages
 import { getWorkspaceRoot } from './workspace';
 import { TaskRunner } from './taskRunner';
 import {
-  fetchJiraIssueAsUserStory,
-  jiraIssueToPrompt,
+  fetchJiraIssueAsMarkdown,
+  hasJiraCredentials,
   parseJiraUrl,
   type JiraConfig,
 } from './jira';
-import { isRovoMcpConfigured } from './rovoMcpCheck';
 import {
   buildSystemPrompt,
   REFINE_SYSTEM,
@@ -60,14 +59,11 @@ export class SpecPanelProvider {
     this.context = context;
     this.ai = new LMClient();
 
-    // Restore saved model preference
-    const savedModel = vscode.workspace.getConfiguration('nspec').get<string>('preferredModelId');
-    if (savedModel) this.ai.setSelectedModel(savedModel);
 
     this.taskRunner = new TaskRunner((text) => this.postMessage({ type: 'taskOutput', text }));
   }
 
-  // â”€â”€â”€ Public API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Public API ────────────────────────────────────────────────────────────
 
   /** Called by the file watcher when .specs/ files change externally. */
   refreshFromDisk() {
@@ -94,25 +90,24 @@ export class SpecPanelProvider {
     const models = await this.ai.getAvailableModels();
     if (models.length === 0) {
       vscode.window.showWarningMessage(
-        'nSpec: No AI model found. Add an API key in Settings â†’ nSpec (Cursor), or sign in to GitHub Copilot (VS Code).'
+        'nSpec: No AI model found. Add an API key in Settings → nSpec (Cursor), or sign in to GitHub Copilot (VS Code).'
       );
       return;
     }
 
     const items: (vscode.QuickPickItem & { id: string })[] = models.map((m) => ({
       label: m.name,
-      description: `${m.vendor} Â· ${m.id}`,
+      description: `${m.vendor} · ${m.id}`,
       id: m.id,
     }));
 
     const picked = (await vscode.window.showQuickPick(items, {
-      title: 'nSpec â€” Select AI Model',
+      title: 'nSpec — Select AI Model',
       placeHolder: 'Choose the model to use for spec generation',
     })) as (vscode.QuickPickItem & { id: string }) | undefined;
 
     if (picked) {
       this.ai.setSelectedModel(picked.id);
-      await vscode.workspace.getConfiguration('nspec').update('preferredModelId', picked.id, true);
       vscode.window.showInformationMessage(`nSpec: Using ${picked.label}`);
       this.postMessage({ type: 'modelChanged', modelName: picked.label, modelId: picked.id });
     }
@@ -238,7 +233,7 @@ export class SpecPanelProvider {
 
         const clean = err.replace(/^[\s\S]*?Error:\s*/i, '').slice(0, 120);
         vscode.window.showErrorMessage(
-          `nSpec: ${clean}${clean.length >= 120 ? 'â€¦' : ''}. Check Settings â†’ nSpec if it continues.`
+          `nSpec: ${clean}${clean.length >= 120 ? '…' : ''}. Check Settings → nSpec if it continues.`
         );
       }
     );
@@ -258,7 +253,7 @@ export class SpecPanelProvider {
     vscode.window.showInformationMessage('nSpec: Spec generated from conversation transcript.');
   }
 
-  // â”€â”€â”€ Panel lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Panel lifecycle ───────────────────────────────────────────────────────
 
   private createPanel() {
     this.panel = vscode.window.createWebviewPanel('nspec', 'nSpec', vscode.ViewColumn.One, {
@@ -294,7 +289,7 @@ export class SpecPanelProvider {
     this.panel?.webview.postMessage(msg);
   }
 
-  // â”€â”€â”€ Message handling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Message handling ──────────────────────────────────────────────────────
 
   private async handleMessage(msg: ToExtensionMessage) {
     switch (msg.command) {
@@ -451,7 +446,7 @@ export class SpecPanelProvider {
     }
   }
 
-  // â”€â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Init ──────────────────────────────────────────────────────────────────
 
   private async sendInit() {
     const specs = specManager.listSpecs().map((s) => ({
@@ -483,7 +478,7 @@ export class SpecPanelProvider {
     });
   }
 
-  // â”€â”€â”€ Create spec â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Create spec ───────────────────────────────────────────────────────────
 
   private async handleCreateSpec(
     specName: string,
@@ -495,18 +490,11 @@ export class SpecPanelProvider {
     let effectivePrompt = prompt?.trim() || '';
 
     if (jiraUrl?.trim()) {
-      const configPath = vscode.workspace
-        .getConfiguration('nspec')
-        .get<string>('rovoMcpConfigPath');
-      const rovoCheck = isRovoMcpConfigured(getWorkspaceRoot(), configPath);
-      if (!rovoCheck.configured) {
-        const choice = await vscode.window.showWarningMessage(
-          "nSpec: Rovo MCP doesn't appear to be configured. Jira integration works best with Rovo MCP. Continue anyway?",
-          { modal: false },
-          'Continue',
-          'Cancel'
+      if (!parseJiraUrl(jiraUrl.trim())) {
+        vscode.window.showErrorMessage(
+          'nSpec: Invalid Jira URL. Use a browse link (e.g. …/browse/PROJ-123).'
         );
-        if (choice !== 'Continue') return;
+        return;
       }
       const config = vscode.workspace.getConfiguration('nspec');
       const jiraConfig: JiraConfig = {
@@ -514,19 +502,52 @@ export class SpecPanelProvider {
         email: config.get<string>('jiraEmail') || undefined,
         apiToken: config.get<string>('jiraApiToken') || undefined,
       };
-      if (!parseJiraUrl(jiraUrl.trim())) {
-        vscode.window.showErrorMessage(
-          'nSpec: Invalid Jira URL. Use a browse link (e.g. â€¦/browse/PROJ-123).'
+
+      if (hasJiraCredentials(jiraConfig)) {
+        // Primary path: fetch issue via REST API and stream as Markdown
+        try {
+          const issue = await fetchJiraIssueAsMarkdown(jiraUrl.trim(), jiraConfig);
+          effectivePrompt = issue.markdown;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`nSpec: ${msg}`);
+          return;
+        }
+      } else {
+        // Fallback path: no credentials — let the user provide content via file or input
+        const choice = await vscode.window.showWarningMessage(
+          'nSpec: Jira credentials are not configured (Settings → nSpec → Jira email / API token). ' +
+            'Import a Markdown file or paste the issue content instead?',
+          { modal: true },
+          'Import file',
+          'Paste content'
         );
-        return;
-      }
-      try {
-        const issue = await fetchJiraIssueAsUserStory(jiraUrl.trim(), jiraConfig);
-        effectivePrompt = jiraIssueToPrompt(issue);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`nSpec: ${msg}`);
-        return;
+        if (!choice) return;
+
+        if (choice === 'Import file') {
+          const uris = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectMany: false,
+            openLabel: 'Use as spec description',
+            filters: { 'Markdown / Text': ['md', 'txt', 'markdown'] },
+          });
+          if (!uris?.length) return;
+          try {
+            effectivePrompt = fs.readFileSync(uris[0].fsPath, 'utf-8').trim();
+          } catch {
+            vscode.window.showErrorMessage('nSpec: Could not read the selected file.');
+            return;
+          }
+        } else {
+          // 'Paste content'
+          const pasted = await vscode.window.showInputBox({
+            prompt: 'Paste the Jira issue content (Markdown or plain text)',
+            placeHolder: '# PROJ-123: My feature\n\nDescription…',
+            ignoreFocusOut: true,
+          });
+          if (!pasted?.trim()) return;
+          effectivePrompt = pasted.trim();
+        }
       }
     }
 
@@ -581,7 +602,7 @@ export class SpecPanelProvider {
     }
   }
 
-  // â”€â”€â”€ Guided clarification (D1 + D2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Guided clarification (D1 + D2) ────────────────────────────────────────
 
   /** Stream AI clarifying questions back to the webview before spec creation. */
   private async handleStartClarification(
@@ -710,8 +731,8 @@ export class SpecPanelProvider {
 
     const transformPick = await vscode.window.showQuickPick(
       [
-        { label: 'Yes â€” transform with AI into spec format', value: true },
-        { label: 'No â€” use file content as-is', value: false },
+        { label: 'Yes — transform with AI into spec format', value: true },
+        { label: 'No — use file content as-is', value: false },
       ],
       { title: 'Transform with AI?', placeHolder: 'Choose' }
     );
@@ -799,7 +820,7 @@ export class SpecPanelProvider {
     }
   }
 
-  // â”€â”€â”€ Open existing spec â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Open existing spec ────────────────────────────────────────────────────
 
   private async handleOpenSpec(specName: string) {
     const specs = specManager.listSpecs();
@@ -835,7 +856,7 @@ export class SpecPanelProvider {
     });
   }
 
-  // â”€â”€â”€ Generate stage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Generate stage ────────────────────────────────────────────────────────
 
   private async handleGenerate(stage: 'design' | 'tasks') {
     if (!this.state.activeSpec) return;
@@ -972,7 +993,7 @@ export class SpecPanelProvider {
     );
   }
 
-  // â”€â”€â”€ Refine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Refine ────────────────────────────────────────────────────────────────
 
   private async handleRefine(stage: Stage, feedback: string) {
     if (!this.state.activeSpec || !feedback) return;
@@ -1039,7 +1060,7 @@ export class SpecPanelProvider {
           if (this.state.chatHistory[stage]) {
             this.state.chatHistory[stage]!.push({
               role: 'assistant',
-              text: 'âœï¸ Document updated.',
+              text: '✏️ Document updated.',
             });
           }
           this.state.contents[stage] = accumulated;
@@ -1059,7 +1080,7 @@ export class SpecPanelProvider {
     );
   }
 
-  // â”€â”€â”€ Manual save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Manual save ──────────────────────────────────────────────────────────
 
   private handleSaveContent(stage: Stage, content: string) {
     if (!this.state.activeSpec) return;
@@ -1069,7 +1090,7 @@ export class SpecPanelProvider {
     this.postMessage({ type: 'saved', stage });
   }
 
-  // â”€â”€â”€ Run tasks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Run tasks ─────────────────────────────────────────────────────────────
 
   private async handleRunTasks() {
     if (!this.state.activeSpec) return;
@@ -1086,7 +1107,7 @@ export class SpecPanelProvider {
       vscode.workspace.getConfiguration('nspec').get<string>('specsFolder') || '.specs';
     const specPath = `${specsFolder}/${this.state.activeSpec}`;
 
-    // Concise instruction â€” the agent reads the spec files itself,
+    // Concise instruction — the agent reads the spec files itself,
     // picks up CLAUDE.md and workspace context naturally.
     const prompt =
       `Read the spec at ${specPath}/ (requirements.md, design.md, tasks.md).` +
@@ -1097,7 +1118,7 @@ export class SpecPanelProvider {
 
     if (allCommands.includes('claude-vscode.editor.open')) {
       // Claude Code: editor.open(sessionId, initialPrompt, viewColumn)
-      // undefined sessionId â†’ new conversation, initialPrompt auto-submits
+      // undefined sessionId → new conversation, initialPrompt auto-submits
       await vscode.commands.executeCommand('claude-vscode.editor.open', undefined, prompt);
     } else if (allCommands.includes('codex.startSession')) {
       // Codex
@@ -1233,13 +1254,12 @@ export class SpecPanelProvider {
 
   private async handleSelectModel(modelId: string) {
     this.ai.setSelectedModel(modelId);
-    await vscode.workspace.getConfiguration('nspec').update('preferredModelId', modelId, true);
     const models = await this.ai.getAvailableModels();
     const model = models.find((m) => m.id === modelId);
     this.postMessage({ type: 'modelChanged', modelName: model?.name ?? modelId, modelId });
   }
 
-  // â”€â”€â”€ Delete spec â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Delete spec ───────────────────────────────────────────────────────────
 
   private handleDeleteSpec(specName: string) {
     specManager.deleteSpec(specName);
@@ -1256,7 +1276,7 @@ export class SpecPanelProvider {
     this.postMessage({ type: 'specDeleted', specName });
   }
 
-  // â”€â”€â”€ Rename spec â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Rename spec ──────────────────────────────────────────────────────────
 
   private handleRenameSpec(oldName: string, newName: string) {
     if (!oldName || !newName) return;
@@ -1276,7 +1296,7 @@ export class SpecPanelProvider {
     }
   }
 
-  // â”€â”€â”€ Cascade from stage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Cascade from stage ───────────────────────────────────────────────────
 
   private async handleCascadeFromStage(fromStage: string) {
     if (!this.state.activeSpec) return;
@@ -1287,7 +1307,7 @@ export class SpecPanelProvider {
     for (let i = startIdx; i < pipeline.length; i++) {
       const stage = pipeline[i];
       if (stage === 'requirements') {
-        // Can't regenerate requirements without a description â€” skip
+        // Can't regenerate requirements without a description — skip
         continue;
       }
       if (stage === 'verify') {
@@ -1300,7 +1320,7 @@ export class SpecPanelProvider {
     }
   }
 
-  // â”€â”€â”€ Generate requirements (regenerate) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Generate requirements (regenerate) ───────────────────────────────────
 
   private async handleGenerateRequirements() {
     if (!this.state.activeSpec) return;
@@ -1326,7 +1346,7 @@ export class SpecPanelProvider {
     await this.streamGenerate('requirements', userPrompt, this.state.activeSpec);
   }
 
-  // â”€â”€â”€ HTML â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── HTML ──────────────────────────────────────────────────────────────────
 
   private buildHtml(webview: vscode.Webview): string {
     const nonce = getNonce();
@@ -1376,12 +1396,12 @@ export class SpecPanelProvider {
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;line-height:1.6;overflow:hidden;pointer-events:auto;cursor:default}
 #app{pointer-events:auto}
 
-/* â”€â”€ Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Layout ───────────────────────────────────────────── */
 #app{display:flex;height:100vh;overflow:hidden}
 #sidebar{width:220px;min-width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 
-/* â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Sidebar ──────────────────────────────────────────── */
 .sidebar-header{padding:16px 14px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
 .sidebar-logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;color:var(--text)}
 .sidebar-logo svg{color:var(--accent)}
@@ -1402,7 +1422,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .btn-new{width:100%;padding:8px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:12.5px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s}
 .btn-new:hover{background:var(--accent-hover)}
 
-/* â”€â”€ Top bar (breadcrumb) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Top bar (breadcrumb) ────────────────────────────── */
 #topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:42px;flex-shrink:0}
 .breadcrumb{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-muted)}
 .breadcrumb-spec{font-weight:600;color:var(--text);font-size:12.5px}
@@ -1425,7 +1445,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .btn-action:disabled{opacity:.4;cursor:not-allowed}
 .btn-action:disabled:hover{border-color:var(--border);color:var(--text)}
 
-/* â”€â”€ Content area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Content area ────────────────────────────────────── */
 #content{flex:1;overflow:hidden;display:flex;flex-direction:column}
 .stage-view{flex:1;display:none;flex-direction:column;overflow:hidden}
 .stage-view.visible{display:flex}
@@ -1452,7 +1472,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .md-rendered td{padding:6px 12px;border:1px solid var(--border);color:var(--text-dim);font-size:.9em}
 .md-rendered input[type=checkbox]{accent-color:var(--accent);margin-right:6px}
 .md-rendered a{color:var(--accent)}
-.stream-cursor::after{content:'â–‹';animation:blink .8s step-end infinite;color:var(--accent);font-size:.85em}
+.stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);font-size:.85em}
 @keyframes blink{50%{opacity:0}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -1465,14 +1485,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .btn-welcome{padding:9px 20px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:13px;font-weight:500;transition:background .15s}
 .btn-welcome:hover{background:var(--accent-hover)}
 
-/* â”€â”€ Edit mode textarea â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Edit mode textarea ──────────────────────────────── */
 .edit-textarea{width:100%;min-height:200px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:14px;font-size:13px;font-family:'Consolas','Monaco','Courier New',monospace;line-height:1.6;resize:none;overflow-y:auto;tab-size:2}
 .edit-textarea:focus{outline:none;border-color:var(--border-focus)}
 .md-area .edit-textarea{display:none}
 .md-area.editing .edit-textarea{display:block}
 .md-area.editing .md-rendered{display:none}
 
-/* â”€â”€ Inline refine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Inline refine ───────────────────────────────────── */
 .refine-inline{display:none;align-items:center;gap:8px;padding:6px 16px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
 .refine-inline.visible{display:flex}
 .refine-input{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:7px 11px;font-size:12.5px;font-family:inherit;resize:none;height:34px;transition:border-color .15s;line-height:1.4}
@@ -1483,36 +1503,36 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .btn-refine-close{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:3px}
 .btn-refine-close:hover{color:var(--text);background:var(--surface3)}
 
-/* â”€â”€ Cascade dropdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Cascade dropdown ────────────────────────────────── */
 .cascade-dropdown{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:200;min-width:220px;overflow:hidden}
 .cascade-dropdown-item{padding:8px 14px;cursor:pointer;font-size:12.5px;color:var(--text);transition:background .1s}
 .cascade-dropdown-item:hover{background:var(--surface2)}
 .cascade-dropdown-item .cd-desc{font-size:11px;color:var(--text-muted);margin-top:2px}
 
-/* â”€â”€ Toast notification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Toast notification ──────────────────────────────── */
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 18px;border-radius:var(--radius);font-size:12.5px;font-weight:500;z-index:300;opacity:0;transition:all .3s ease;pointer-events:none;white-space:nowrap}
 .toast.visible{transform:translateX(-50%) translateY(0);opacity:1}
 
-/* â”€â”€ Sidebar search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Sidebar search ──────────────────────────────────── */
 .sidebar-search{padding:8px 8px 0}
 .sidebar-search-input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:5px 8px;font-size:12px;font-family:inherit;transition:border-color .15s}
 .sidebar-search-input:focus{outline:none;border-color:var(--border-focus)}
 .sidebar-search-input::placeholder{color:var(--text-muted)}
 .specs-count{padding:2px 8px;font-size:10px;color:var(--text-muted)}
 
-/* â”€â”€ Inline rename â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Inline rename ───────────────────────────────────── */
 .rename-input{background:var(--surface2);border:1px solid var(--border-focus);color:var(--text);border-radius:3px;padding:2px 6px;font-size:12.5px;font-family:inherit;width:100%;outline:none}
 
-/* â”€â”€ Empty stage CTA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Empty stage CTA ─────────────────────────────────── */
 .empty-stage{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:60px 20px;color:var(--text-muted);text-align:center}
 .empty-stage-text{font-size:13px}
 .btn-empty-cta{padding:8px 18px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:12.5px;font-weight:500;transition:background .15s}
 .btn-empty-cta:hover{background:var(--accent-hover)}
 
-/* â”€â”€ Custom prompts indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Custom prompts indicator ────────────────────────── */
 .custom-prompts-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:4px;vertical-align:middle}
 
-/* â”€â”€ Modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Modals ───────────────────────────────────────────── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(4px);pointer-events:auto}
 .modal-overlay.hidden{display:none}
 .modal{background:var(--surface);pointer-events:auto;border:1px solid var(--border);border-radius:12px;padding:24px;width:480px;max-width:calc(100vw - 32px);box-shadow:0 24px 60px rgba(0,0,0,.5)}
@@ -1526,7 +1546,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
 
-/* â”€â”€ Wizard (D1: Guided creation) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Wizard (D1: Guided creation) ────────────────────── */
 .wizard-modal{width:520px;max-height:calc(100vh - 80px);overflow-y:auto}
 .wizard-stepper{display:flex;align-items:center;gap:0;margin-bottom:22px}
 .wizard-step-node{display:flex;align-items:center;gap:6px}
@@ -1561,48 +1581,48 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
 .btn-modal-ok:disabled{opacity:.45;cursor:not-allowed}
 .btn-modal-ok:disabled:hover{background:var(--accent)}
 
-/* â”€â”€ Task progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Task progress bar ───────────────────────────────── */
 .progress-bar-wrap{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px}
 .progress-bar-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s}
 .progress-label{font-size:10px;color:var(--text-muted)}
-/* â”€â”€ Verify health score badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Verify health score badge ───────────────────────── */
 .health-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:11.5px;font-weight:600;border:1px solid}
 .health-excellent{background:rgba(166,227,161,.12);color:var(--green);border-color:rgba(166,227,161,.3)}
 .health-good{background:rgba(124,106,247,.12);color:var(--accent);border-color:rgba(124,106,247,.3)}
 .health-fair{background:rgba(249,226,175,.12);color:var(--yellow);border-color:rgba(249,226,175,.3)}
 .health-poor{background:var(--red-dim);color:var(--red);border-color:rgba(243,139,168,.3)}
-/* â”€â”€ OpenSpec badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── OpenSpec badge ──────────────────────────────────── */
 .openspec-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;background:rgba(124,106,247,.1);border:1px solid rgba(124,106,247,.3);border-radius:10px;font-size:10px;color:var(--accent);cursor:pointer}
 .openspec-badge:hover{background:var(--accent-dim)}
-/* â”€â”€ Interactive task checkboxes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Interactive task checkboxes ─────────────────────── */
 .md-rendered input[type=checkbox]{accent-color:var(--accent);cursor:pointer;width:13px;height:13px}
 .task-row{display:flex;align-items:baseline;gap:6px}
 .task-row.done label{text-decoration:line-through;color:var(--text-muted)}
-/* â”€â”€ Spec dots with 4 stages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Spec dots with 4 stages ────────────────────────── */
 .spec-item-dots{display:flex;gap:3px;align-items:center}
 .stage-dot.verify{background:var(--yellow)}
-/* â”€â”€ Verify stage view specific â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Verify stage view specific ─────────────────────── */
 .verify-header{padding:16px 32px 0;display:flex;align-items:center;gap:10px}
-/* â”€â”€ Model selector chip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Model selector chip ─────────────────────────────── */
 .model-chip{display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;cursor:pointer;font-size:11.5px;color:var(--text-muted);transition:all .15s;white-space:nowrap;max-width:200px;overflow:hidden}
 .model-chip:hover{border-color:var(--accent);color:var(--text)}
 .model-chip svg{flex-shrink:0;color:var(--accent)}
 .model-chip-name{overflow:hidden;text-overflow:ellipsis}
 .model-chip-none{color:var(--red);border-color:var(--red-dim)}
 .model-chip-none:hover{border-color:var(--red)}
-/* â”€â”€ API key warning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── API key warning ──────────────────────────────────── */
 #api-warning{display:none;align-items:center;gap:10px;padding:8px 16px;background:var(--red-dim);border-bottom:1px solid var(--red);font-size:12.5px;color:var(--red)}
 #api-warning.visible{display:flex}
 .link-btn{background:none;border:none;color:var(--red);text-decoration:underline;cursor:pointer;font-size:12.5px}
 
-/* â”€â”€ Spinner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Spinner ──────────────────────────────────────────── */
 .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 <body>
 <div id="app">
 
-  <!-- â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ── Sidebar ──────────────────────────────────────── -->
   <div id="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-logo">
@@ -1611,7 +1631,7 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
       </div>
     </div>
     <div class="sidebar-search">
-      <input type="text" class="sidebar-search-input" id="sidebar-search" placeholder="Filter specsâ€¦">
+      <input type="text" class="sidebar-search-input" id="sidebar-search" placeholder="Filter specs…">
     </div>
     <div class="specs-count" id="specs-count"></div>
     <div class="specs-list" id="specs-list"></div>
@@ -1623,27 +1643,27 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
     </div>
   </div>
 
-  <!-- â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ── Main ─────────────────────────────────────────── -->
   <div id="main">
 
     <!-- Top bar -->
     <div id="topbar">
       <div class="breadcrumb">
-        <span class="breadcrumb-spec" id="bc-spec">â€”</span>
-        <span class="bc-sep">â€º</span>
+        <span class="breadcrumb-spec" id="bc-spec">—</span>
+        <span class="bc-sep">›</span>
         <div class="stage-pills" id="stage-pills">
           <div class="stage-pill" data-stage="requirements" id="pill-requirements">
             <span class="pill-num">1</span> Requirements
           </div>
-          <span class="bc-arrow">â€º</span>
+          <span class="bc-arrow">›</span>
           <div class="stage-pill" data-stage="design" id="pill-design">
             <span class="pill-num">2</span> Design
           </div>
-          <span class="bc-arrow">â€º</span>
+          <span class="bc-arrow">›</span>
           <div class="stage-pill" data-stage="tasks" id="pill-tasks">
             <span class="pill-num">3</span> Task list
           </div>
-          <span class="bc-arrow">â€º</span>
+          <span class="bc-arrow">›</span>
           <div class="stage-pill" data-stage="verify" id="pill-verify">
             <span class="pill-num">4</span> Verify
           </div>
@@ -1663,7 +1683,7 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
     <div id="content">
       <!-- Welcome -->
       <div id="welcome">
-        <div class="welcome-logo">ðŸ“‹</div>
+        <div class="welcome-logo">📋</div>
         <div class="welcome-title">Welcome to nSpec</div>
         <div class="welcome-sub">Create AI-powered specs with Requirements, Design, and Task plans in seconds.</div>
         <button type="button" class="btn-welcome" id="btn-welcome-new">Create your first spec</button>
@@ -1691,7 +1711,7 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
       <!-- Verify view -->
       <div class="stage-view" id="view-verify">
         <div id="verify-score-header" class="verify-header" style="display:none">
-          <span id="health-badge" class="health-badge health-good">â€” / 100</span>
+          <span id="health-badge" class="health-badge health-good">— / 100</span>
           <span style="font-size:12px;color:var(--text-muted)" id="health-verdict"></span>
         </div>
         <div class="md-area" id="area-verify"><div class="md-rendered" id="md-verify"></div><textarea class="edit-textarea" id="edit-verify"></textarea></div>
@@ -1700,19 +1720,19 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
 
     <!-- Inline refine bar (replaces bottom bar) -->
     <div class="refine-inline" id="refine-inline">
-      <input type="text" class="refine-input" id="refine-input" placeholder="Describe the changeâ€¦ (Enter to apply)">
+      <input type="text" class="refine-input" id="refine-input" placeholder="Describe the change… (Enter to apply)">
       <button class="btn-refine-send" id="btn-refine-send">Refine</button>
-      <button class="btn-refine-close" id="btn-refine-close" title="Close">âœ•</button>
+      <button class="btn-refine-close" id="btn-refine-close" title="Close">✕</button>
     </div>
 
   </div>
 </div>
 
-<!-- â”€â”€ New Spec Wizard (D1: Guided creation) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ── New Spec Wizard (D1: Guided creation) ──────────── -->
 <div class="modal-overlay hidden" id="modal-new">
   <div class="modal wizard-modal">
 
-    <!-- â”€â”€ Step 1: Describe (type + name + description) â”€â”€ -->
+    <!-- ── Step 1: Describe (type + name + description) ── -->
     <div class="wizard-pane active" id="wizard-pane-1">
       <div class="modal-title">New Spec</div>
       <div class="modal-field">
@@ -1734,34 +1754,34 @@ textarea.modal-input{resize:vertical;min-height:90px;line-height:1.5}
         <input class="modal-input" id="new-spec-name" type="text" placeholder="e.g. User Authentication, M2 Gatekeeper Attack">
       </div>
       <div class="modal-field" id="jira-field">
-        <label class="modal-label" for="new-spec-jira">Jira URL <span style="font-weight:400;color:var(--text-muted)">(optional â€” auto-selects Feature type)</span></label>
+        <label class="modal-label" for="new-spec-jira">Jira URL <span style="font-weight:400;color:var(--text-muted)">(optional — auto-selects Feature type)</span></label>
         <input class="modal-input" id="new-spec-jira" type="url" placeholder="https://your-domain.atlassian.net/browse/PROJ-123">
       </div>
       <div class="modal-field">
         <label class="modal-label" for="new-spec-prompt" id="prompt-label">Description</label>
-        <textarea class="modal-input" id="new-spec-prompt" rows="4" placeholder="Describe the feature, its purpose, key behaviors, and any constraintsâ€¦"></textarea>
+        <textarea class="modal-input" id="new-spec-prompt" rows="4" placeholder="Describe the feature, its purpose, key behaviors, and any constraints…"></textarea>
       </div>
       <div class="modal-field" id="template-field">
         <label class="modal-label" for="new-spec-template">Template <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
         <select class="modal-input" id="new-spec-template" style="padding:7px 11px">
-          <option value="">No template â€” start blank</option>
-          <option value="rest-api">REST API â€” CRUD endpoints, auth, validation</option>
-          <option value="game-feature">Game Feature â€” Player-facing feature</option>
-          <option value="ml-experiment">ML Experiment â€” Model training / evaluation</option>
-          <option value="cli-tool">CLI Tool â€” Command-line application</option>
-          <option value="library-sdk">Library / SDK â€” Reusable package</option>
+          <option value="">No template — start blank</option>
+          <option value="rest-api">REST API — CRUD endpoints, auth, validation</option>
+          <option value="game-feature">Game Feature — Player-facing feature</option>
+          <option value="ml-experiment">ML Experiment — Model training / evaluation</option>
+          <option value="cli-tool">CLI Tool — Command-line application</option>
+          <option value="library-sdk">Library / SDK — Reusable package</option>
         </select>
       </div>
       <div class="modal-actions">
         <button class="btn-modal-cancel" id="btn-new-cancel">Cancel</button>
-        <button class="btn-modal-ok" id="btn-wiz-next-1">Generate â†’</button>
+        <button class="btn-modal-ok" id="btn-wiz-next-1">Generate →</button>
       </div>
     </div>
 
   </div>
 </div>
 
-<!-- â”€â”€ Confirm delete modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ── Confirm delete modal ───────────────────────────── -->
 <div class="modal-overlay hidden" id="modal-delete">
   <div class="modal">
     <div class="modal-title">Delete spec?</div>

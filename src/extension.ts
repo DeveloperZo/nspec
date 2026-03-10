@@ -46,8 +46,15 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // ── @nspec chat participant (Copilot / Codex chat integration) ────────
-  registerChatParticipant(context);
+  // ── @nspec chat participant (requires GitHub Copilot Chat) ────────────
+  // vscode.chat is available in VS Code 1.90+ but the participant UI only
+  // surfaces when GitHub Copilot Chat is installed. Guard so a missing or
+  // broken chat API never prevents the core panel from activating.
+  try {
+    registerChatParticipant(context);
+  } catch {
+    // Copilot Chat unavailable — @nspec participant disabled, panel still works
+  }
 
   // ── File watcher: auto-refresh panel when .specs/ changes externally ──────
   setupFileWatcher(context);
